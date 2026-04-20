@@ -402,6 +402,21 @@ export const DEMO_SOURCES: SourceDefinition[] = [
     description: 'Educational video essays across science, history, and culture.'
   },
   {
+    id: 'src-community-demo',
+    name: 'Community',
+    slug: 'community',
+    iconUrl: 'https://dummyimage.com/128x128/111111/ffffff.png&text=C',
+    siteUrl: 'https://fieldguide.local/community',
+    feedUrl: 'https://fieldguide.local/community/feed.xml',
+    kind: 'custom',
+    status: 'active',
+    sourceType: 'community',
+    subjects: ['community'],
+    defaultAudience: 'standard_only',
+    language: 'en',
+    description: 'Approved user-contributed reading paths, essays, and links.'
+  },
+  {
     id: 'src-sex-positive',
     name: 'Sex Positive Journal',
     slug: 'sex-positive-journal',

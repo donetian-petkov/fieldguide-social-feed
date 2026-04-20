@@ -1,0 +1,377 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  user
+  admin
+}
+
+enum InterfaceLanguage {
+  en
+  bg
+}
+
+enum ContentLanguageMode {
+  single
+  dual
+}
+
+enum ThemeMode {
+  light
+  dark
+  system
+}
+
+enum ContentMode {
+  kid
+  standard
+  adult
+}
+
+enum ContentKind {
+  external_article
+  youtube_video
+  community_post
+}
+
+enum FeedKind {
+  rss
+  youtube
+  custom
+}
+
+enum SourceStatus {
+  active
+  paused
+  error
+}
+
+enum AudienceLabel {
+  kid_safe
+  standard_only
+  adult_only
+}
+
+enum SubjectTag {
+  history
+  art
+  books
+  movies
+  country_knowledge
+  photography
+  nature
+  video
+  community
+}
+
+enum VibePreset {
+  museum
+  archive
+  field_notes
+  cinema
+  naturalist
+}
+
+enum SourceType {
+  editorial
+  community
+  adult_educational
+}
+
+enum SubmissionStatus {
+  pending
+  approved
+  rejected
+}
+
+enum SystemScope {
+  api
+  worker
+  ingestion
+  email
+  ai
+}
+
+enum SystemLevel {
+  error
+  warn
+}
+
+model User {
+  id                 String               @id @default(cuid())
+  username           String               @unique
+  email              String               @unique
+  passwordHash       String
+  role               UserRole             @default(user)
+  suspendedAt        DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  settings           UserSettings?
+  sessions           Session[]
+  comments           Comment[]
+  albums             Album[]
+  saves              SavedItem[]
+  hiddenItems        HiddenItem[]
+  submissions        Submission[]
+  reviewedItems      Submission[]         @relation("SubmissionReviewer")
+  passwordResetTokens PasswordResetToken[]
+  modeSwitchAudits   ModeSwitchAudit[]
+  aiUsage            AiUsageLedger[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserSettings {
+  id                   String              @id @default(cuid())
+  userId               String              @unique
+  displayName          String
+  language             InterfaceLanguage   @default(en)
+  contentLanguageMode  ContentLanguageMode @default(single)
+  vibePreset           VibePreset          @default(museum)
+  fontFamily           String
+  fontScale            String
+  imageMode            String
+  themeMode            ThemeMode           @default(light)
+  contentMode          ContentMode         @default(standard)
+  newsletterEnabled    Boolean             @default(false)
+  askAiEnabled         Boolean             @default(true)
+  protectedModeEnabled Boolean             @default(true)
+  user                 User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Source {
+  id              String         @id
+  name            String
+  slug            String         @unique
+  iconUrl         String
+  siteUrl         String
+  description     String         @db.Text
+  language        InterfaceLanguage
+  defaultAudience AudienceLabel
+  sourceType      SourceType
+  status          SourceStatus
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  feeds           SourceFeed[]
+  items           ContentItem[]
+}
+
+model SourceFeed {
+  id              String   @id @default(cuid())
+  sourceId        String
+  kind            FeedKind
+  feedUrl         String   @unique
+  pollIntervalSec Int      @default(900)
+  etag            String?
+  lastModified    String?
+  lastCheckedAt   DateTime?
+  source          Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+}
+
+model ContentItem {
+  id              String         @id
+  slug            String         @unique
+  kind            ContentKind
+  sourceId        String
+  authorId        String?
+  publishedAt     DateTime
+  originalTitle   String
+  originalSummary String         @db.Text
+  bodyMarkdown    String?        @db.LongText
+  coverImageUrl   String
+  externalUrl     String?
+  youtubeVideoId  String?
+  subject         SubjectTag
+  audience        AudienceLabel
+  commentsLocked  Boolean        @default(false)
+  hiddenByDefault Boolean        @default(false)
+  pinned          Boolean        @default(false)
+  removedAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  source          Source         @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  author          User?          @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  translations    ContentTranslation[]
+  tags            ContentTag[]
+  comments        Comment[]
+  saves           SavedItem[]
+  hiddenItems     HiddenItem[]
+  albumItems      AlbumItem[]
+  pinnedSlots     PinnedSlot[]
+  aiUsage         AiUsageLedger[]
+}
+
+model ContentTranslation {
+  id       String            @id @default(cuid())
+  itemId   String
+  language InterfaceLanguage
+  title    String
+  summary  String            @db.Text
+  slug     String
+  item     ContentItem       @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, language])
+}
+
+model ContentTag {
+  id     String      @id @default(cuid())
+  itemId String
+  label  String
+  type   String
+  value  String
+  item   ContentItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+}
+
+model Comment {
+  id             String      @id @default(cuid())
+  itemId         String
+  authorId       String
+  body           String      @db.Text
+  createdAt      DateTime    @default(now())
+  editedAt       DateTime?
+  deletedAt      DateTime?
+  moderationNote String?     @db.Text
+  item           ContentItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  author         User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+}
+
+model Album {
+  id          String      @id @default(cuid())
+  ownerId     String
+  title       String
+  description String      @db.Text
+  coverItemId String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  owner       User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  items       AlbumItem[]
+}
+
+model AlbumItem {
+  albumId   String
+  itemId    String
+  position  Int
+  createdAt DateTime    @default(now())
+  album     Album       @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  item      ContentItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([albumId, itemId])
+}
+
+model SavedItem {
+  userId    String
+  itemId    String
+  createdAt DateTime    @default(now())
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item      ContentItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([userId, itemId])
+}
+
+model HiddenItem {
+  userId    String
+  itemId    String
+  createdAt DateTime    @default(now())
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item      ContentItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([userId, itemId])
+}
+
+model Submission {
+  id            String           @id @default(cuid())
+  type          String
+  title         String
+  sourceUrl     String?
+  body          String?          @db.LongText
+  submittedById String
+  status        SubmissionStatus @default(pending)
+  reviewedById  String?
+  reviewedAt    DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  submittedBy   User             @relation(fields: [submittedById], references: [id], onDelete: Cascade)
+  reviewedBy    User?            @relation("SubmissionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+}
+
+model AiConfig {
+  id                    Int      @id
+  provider              String
+  summaryModel          String
+  translationModel      String
+  askModel              String
+  newsletterModel       String
+  monthlyBudgetUsd      Decimal  @db.Decimal(10, 2)
+  perJobBudgetUsd       Decimal  @db.Decimal(10, 2)
+  autoDowngrade         Boolean  @default(true)
+  pauseOnBudgetExceeded Boolean  @default(false)
+  updatedAt             DateTime @updatedAt
+}
+
+model AiUsageLedger {
+  id           String      @id @default(cuid())
+  userId       String?
+  itemId       String?
+  provider     String
+  model        String
+  purpose      String
+  inputTokens  Int
+  outputTokens Int
+  totalCostUsd Decimal     @db.Decimal(10, 4)
+  createdAt    DateTime    @default(now())
+  user         User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  item         ContentItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+}
+
+model SystemErrorEvent {
+  id         String      @id @default(cuid())
+  scope      SystemScope
+  message    String      @db.Text
+  level      SystemLevel
+  resolvedAt DateTime?
+  createdAt  DateTime    @default(now())
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PinnedSlot {
+  id        String      @id @default(cuid())
+  feed      String
+  slot      Int
+  itemId    String
+  createdAt DateTime    @default(now())
+  item      ContentItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([feed, slot])
+}
+
+model ModeSwitchAudit {
+  id         String      @id @default(cuid())
+  userId     String
+  fromMode   ContentMode
+  toMode     ContentMode
+  verifiedAt DateTime    @default(now())
+  ipAddress  String?
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
