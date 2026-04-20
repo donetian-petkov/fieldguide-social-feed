@@ -83,6 +83,17 @@ function hashToken(token: string) {
   return createHash('sha256').update(token).digest('hex');
 }
 
+function slugify(value: string) {
+  return value
+    .normalize('NFKD')
+    .replace(/[^\w\s-]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 72);
+}
+
 function audienceLabelText(audience: ContentItem['audience']) {
   if (audience === 'kid_safe') return 'Kid Safe';
   if (audience === 'adult_only') return 'Adult Only';
@@ -195,6 +206,7 @@ function buildItemDto(item: ItemWithRelations): ContentItem {
     pinned: item.pinned,
     commentsLocked: item.commentsLocked,
     hiddenByDefault: item.hiddenByDefault,
+    removedAt: item.removedAt?.toISOString() || null,
     translations: item.translations.map((translation) => ({
       language: translation.language,
       title: translation.title,
@@ -903,7 +915,7 @@ export class PrismaStore implements AppStore {
   }
 
   async getAdminSnapshot(): Promise<AdminSnapshot> {
-    const [sources, submissions, users, errorLogs, aiConfig, aiUsage] = await Promise.all([
+    const [sources, submissions, users, items, comments, errorLogs, aiConfig, aiUsage] = await Promise.all([
       this.listSources(),
       this.prisma.submission.findMany({
         include: {
@@ -916,6 +928,38 @@ export class PrismaStore implements AppStore {
       this.prisma.user.findMany({
         include: {
           settings: true
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      }),
+      this.prisma.contentItem.findMany({
+        include: {
+          source: {
+            include: {
+              feeds: true
+            }
+          },
+          author: {
+            include: {
+              settings: true
+            }
+          },
+          translations: true,
+          tags: true
+        },
+        orderBy: {
+          updatedAt: 'desc'
+        },
+        take: 24
+      }),
+      this.prisma.comment.findMany({
+        include: {
+          author: {
+            include: {
+              settings: true
+            }
+          }
         },
         orderBy: {
           createdAt: 'desc'
@@ -943,6 +987,8 @@ export class PrismaStore implements AppStore {
       sources,
       submissions: submissions.map(buildSubmissionDto),
       users: users.map(buildUserDto),
+      items: items.map(buildItemDto),
+      comments: comments.map(buildCommentDto),
       errorLogs: errorLogs.map((log) => ({
         id: log.id,
         scope: log.scope,
@@ -982,6 +1028,175 @@ export class PrismaStore implements AppStore {
       }
     });
     return buildSourceDefinition(created);
+  }
+
+  async reviewSubmission(submissionId: string, decision: 'approved' | 'rejected') {
+    const submission = await this.prisma.submission.findUnique({
+      where: {
+        id: submissionId
+      },
+      include: {
+        submittedBy: true
+      }
+    });
+    if (!submission) throw new Error('Submission not found.');
+
+    let approvedItem: ContentItem | null = null;
+    if (decision === 'approved' && submission.status !== 'approved') {
+      await this.prisma.$transaction(async (tx) => {
+        const source = await this.ensureCommunitySource(tx);
+        const title = submission.title.trim();
+        const summary =
+          submission.body?.trim().slice(0, 280) ||
+          `An approved community submission from ${submission.submittedBy.username} that is now available in the community feed.`;
+        const slugBase = slugify(title) || `community-${randomUUID().slice(0, 8)}`;
+        const item = await tx.contentItem.create({
+          data: {
+            id: `item-${randomUUID()}`,
+            slug: `${slugBase}-${randomUUID().slice(0, 8)}`,
+            dedupeKey: hashToken(`submission:${submission.id}`),
+            kind: 'community_post',
+            sourceId: source.id,
+            authorId: submission.submittedById,
+            publishedAt: new Date(),
+            originalTitle: title,
+            originalSummary: summary,
+            bodyMarkdown: submission.body || null,
+            coverImageUrl: source.iconUrl,
+            externalUrl: submission.sourceUrl || null,
+            subject: 'community',
+            audience: 'standard_only',
+            translations: {
+              create: [
+                {
+                  language: 'en',
+                  title,
+                  summary,
+                  slug: `${slugBase}-en`
+                },
+                {
+                  language: 'bg',
+                  title,
+                  summary,
+                  slug: `${slugBase}-bg`
+                }
+              ]
+            },
+            tags: {
+              create: [
+                {
+                  label: 'Community',
+                  type: 'subject',
+                  value: 'community'
+                },
+                {
+                  label: 'Not Verified',
+                  type: 'flag',
+                  value: 'not_verified'
+                },
+                {
+                  label: 'Standard',
+                  type: 'audience',
+                  value: 'standard_only'
+                }
+              ]
+            }
+          },
+          include: {
+            source: {
+              include: {
+                feeds: true
+              }
+            },
+            author: {
+              include: {
+                settings: true
+              }
+            },
+            translations: true,
+            tags: true
+          }
+        });
+        approvedItem = buildItemDto(item);
+
+        await tx.submission.update({
+          where: {
+            id: submissionId
+          },
+          data: {
+            status: 'approved',
+            reviewedAt: new Date()
+          }
+        });
+      });
+    } else if (decision === 'rejected' && submission.status !== 'rejected') {
+      await this.prisma.submission.update({
+        where: {
+          id: submissionId
+        },
+        data: {
+          status: 'rejected',
+          reviewedAt: new Date()
+        }
+      });
+    } else if (decision === 'approved') {
+      const existing = await this.prisma.contentItem.findFirst({
+        where: {
+          authorId: submission.submittedById,
+          kind: 'community_post',
+          originalTitle: submission.title
+        },
+        include: {
+          source: {
+            include: {
+              feeds: true
+            }
+          },
+          author: {
+            include: {
+              settings: true
+            }
+          },
+          translations: true,
+          tags: true
+        }
+      });
+      approvedItem = existing ? buildItemDto(existing) : null;
+    }
+
+    const updated = await this.prisma.submission.findUnique({
+      where: {
+        id: submissionId
+      },
+      include: {
+        submittedBy: true
+      }
+    });
+    if (!updated) throw new Error('Submission not found.');
+    return {
+      submission: buildSubmissionDto(updated),
+      item: approvedItem
+    };
+  }
+
+  async deleteComment(commentId: string, moderationNote?: string) {
+    const updated = await this.prisma.comment.update({
+      where: {
+        id: commentId
+      },
+      data: {
+        deletedAt: new Date(),
+        moderationNote: moderationNote || 'Deleted by admin.'
+      },
+      include: {
+        author: {
+          include: {
+            settings: true
+          }
+        }
+      }
+    });
+    return buildCommentDto(updated);
   }
 
   async patchItem(
@@ -1037,6 +1252,21 @@ export class PrismaStore implements AppStore {
     });
 
     const updated = await this.findItem(itemId);
+    if (!updated) throw new Error('Item not found.');
+    return buildItemDto(updated);
+  }
+
+  async removeItem(itemId: string, removed: boolean) {
+    await this.prisma.contentItem.update({
+      where: {
+        id: itemId
+      },
+      data: {
+        removedAt: removed ? new Date() : null,
+        pinned: removed ? false : undefined
+      }
+    });
+    const updated = await this.findItem(itemId, true);
     if (!updated) throw new Error('Item not found.');
     return buildItemDto(updated);
   }
@@ -1237,14 +1467,44 @@ export class PrismaStore implements AppStore {
     return user;
   }
 
-  private async findItem(idOrSlug: string) {
+  private async ensureCommunitySource(tx: Prisma.TransactionClient) {
+    const existing = await tx.source.findUnique({
+      where: {
+        id: 'src-community-demo'
+      }
+    });
+    if (existing) return existing;
+    return tx.source.create({
+      data: {
+        id: 'src-community-demo',
+        name: 'Fieldguide Community',
+        slug: 'community',
+        iconUrl: `${this.appUrl}/community-icon.png`,
+        siteUrl: `${this.appUrl}/community`,
+        description: 'Approved community submissions.',
+        subjectsJson: JSON.stringify(['community']),
+        language: 'en',
+        defaultAudience: 'standard_only',
+        sourceType: 'community',
+        status: 'active',
+        feeds: {
+          create: {
+            kind: 'custom',
+            feedUrl: `${this.appUrl}/community/feed.xml`
+          }
+        }
+      }
+    });
+  }
+
+  private async findItem(idOrSlug: string, includeRemoved = false) {
     return this.prisma.contentItem.findFirst({
       where: {
         OR: [
           { id: idOrSlug },
           { slug: idOrSlug }
         ],
-        removedAt: null
+        ...(includeRemoved ? {} : { removedAt: null })
       },
       include: {
         source: {

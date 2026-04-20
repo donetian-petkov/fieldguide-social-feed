@@ -104,6 +104,7 @@ export const contentItemSchema = z.object({
   pinned: z.boolean(),
   commentsLocked: z.boolean(),
   hiddenByDefault: z.boolean(),
+  removedAt: z.string().nullable().optional(),
   translations: z.array(translationSchema),
   tags: z.array(contentTagSchema),
   bodyMarkdown: z.string().nullable(),
@@ -1043,6 +1044,7 @@ export function filterItemsForFeed(
   hiddenIds: string[] = []
 ) {
   return items.filter((item) => {
+    if (item.removedAt) return false;
     if (hiddenIds.includes(item.id)) return false;
     if (contentMode === 'kid') {
       if (item.audience === 'adult_only') return false;

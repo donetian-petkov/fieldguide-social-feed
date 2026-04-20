@@ -123,6 +123,8 @@ export function getAdminModel() {
     viewer: demoAdmin,
     sources: DEMO_SOURCES,
     submissions: DEMO_SUBMISSIONS,
+    items: DEMO_ITEMS,
+    comments: DEMO_COMMENTS,
     errorLogs: DEMO_ERROR_LOGS,
     aiConfig: DEMO_AI_CONFIG,
     aiUsage: DEMO_AI_USAGE,

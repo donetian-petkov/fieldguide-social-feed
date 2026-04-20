@@ -26,6 +26,18 @@ const suspendBodySchema = z.object({
   suspended: z.boolean().default(true)
 });
 
+const submissionReviewSchema = z.object({
+  decision: z.enum(['approved', 'rejected'])
+});
+
+const deleteCommentSchema = z.object({
+  moderationNote: z.string().trim().max(500).optional()
+});
+
+const removeItemSchema = z.object({
+  removed: z.boolean().default(true)
+});
+
 export async function registerAdminRoutes(app: FastifyInstance, options: { store: AppStore; queues: AppQueues }) {
   app.addHook('preHandler', async (request) => {
     if (!request.currentUser || request.currentUser.role !== 'admin') {
@@ -76,6 +88,14 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
     };
   });
 
+  app.post('/v1/admin/items/:id/remove', async (request) => {
+    const params = request.params as { id: string };
+    const parsed = removeItemSchema.parse(request.body || {});
+    return {
+      item: await options.store.removeItem(params.id, parsed.removed)
+    };
+  });
+
   app.post('/v1/admin/items/:id/pin', async (request) => {
     const params = request.params as { id: string };
     const parsed = pinBodySchema.parse(request.body || {});
@@ -97,6 +117,20 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
     const parsed = suspendBodySchema.parse(request.body || {});
     return {
       user: await options.store.suspendUser(params.id, parsed.suspended)
+    };
+  });
+
+  app.post('/v1/admin/submissions/:id/review', async (request) => {
+    const params = request.params as { id: string };
+    const parsed = submissionReviewSchema.parse(request.body || {});
+    return await options.store.reviewSubmission(params.id, parsed.decision);
+  });
+
+  app.post('/v1/admin/comments/:id/delete', async (request) => {
+    const params = request.params as { id: string };
+    const parsed = deleteCommentSchema.parse(request.body || {});
+    return {
+      comment: await options.store.deleteComment(params.id, parsed.moderationNote)
     };
   });
 

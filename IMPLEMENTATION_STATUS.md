@@ -27,3 +27,5 @@ The project is **not complete** while any major product area is still demo-backe
 - The API now schedules source polling and newsletter jobs through BullMQ.
 - The worker now performs persisted RSS ingestion, metadata enrichment, newsletter selection, and delivery logging.
 - Admin sources now support adding curated feeds and queueing manual resync jobs from the web UI.
+- Admin moderation now supports submission approval/rejection, comment deletion, item removal/restoration, and comment locking from the web UI.
+- Approved submissions now materialize into community feed/profile content instead of stopping at a pending queue record.

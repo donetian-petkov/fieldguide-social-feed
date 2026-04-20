@@ -44,6 +44,8 @@ type AdminDashboardResponse = {
   sources: SourceDefinition[];
   submissions: SubmissionDto[];
   users: UserSettingsDto[];
+  items: ContentItem[];
+  comments: CommentDto[];
   errorLogs: ErrorLogDto[];
   aiConfig: AiModelConfig;
   aiUsage: AiUsageSnapshot[];
@@ -107,6 +109,57 @@ export const fieldguideApi = createApi({
       query: (sourceId) => ({
         url: `/v1/admin/sources/${sourceId}/resync`,
         method: 'POST'
+      }),
+      invalidatesTags: ['Admin']
+    }),
+    reviewSubmission: builder.mutation<{ submission: SubmissionDto; item: ContentItem | null }, { submissionId: string; decision: 'approved' | 'rejected' }>({
+      query: ({ submissionId, decision }) => ({
+        url: `/v1/admin/submissions/${submissionId}/review`,
+        method: 'POST',
+        body: { decision }
+      }),
+      invalidatesTags: ['Admin', 'Feed', 'Profile']
+    }),
+    deleteAdminComment: builder.mutation<{ comment: CommentDto }, { commentId: string; moderationNote?: string }>({
+      query: ({ commentId, ...body }) => ({
+        url: `/v1/admin/comments/${commentId}/delete`,
+        method: 'POST',
+        body
+      }),
+      invalidatesTags: ['Admin', 'Item']
+    }),
+    patchAdminItem: builder.mutation<
+      { item: ContentItem },
+      { itemId: string; patch: Partial<Pick<ContentItem, 'audience' | 'commentsLocked' | 'flags' | 'hiddenByDefault' | 'pinned'>> }
+    >({
+      query: ({ itemId, patch }) => ({
+        url: `/v1/admin/items/${itemId}`,
+        method: 'PATCH',
+        body: patch
+      }),
+      invalidatesTags: ['Admin', 'Feed', 'Item']
+    }),
+    removeAdminItem: builder.mutation<{ item: ContentItem }, { itemId: string; removed: boolean }>({
+      query: ({ itemId, removed }) => ({
+        url: `/v1/admin/items/${itemId}/remove`,
+        method: 'POST',
+        body: { removed }
+      }),
+      invalidatesTags: ['Admin', 'Feed', 'Item', 'Profile']
+    }),
+    lockAdminItemComments: builder.mutation<{ item: ContentItem }, { itemId: string; locked: boolean }>({
+      query: ({ itemId, locked }) => ({
+        url: `/v1/admin/items/${itemId}/lock-comments`,
+        method: 'POST',
+        body: { locked }
+      }),
+      invalidatesTags: ['Admin', 'Item']
+    }),
+    suspendAdminUser: builder.mutation<{ user: UserSettingsDto }, { username: string; suspended: boolean }>({
+      query: ({ username, suspended }) => ({
+        url: `/v1/admin/users/${username}/suspend`,
+        method: 'POST',
+        body: { suspended }
       }),
       invalidatesTags: ['Admin']
     }),
@@ -200,18 +253,24 @@ export const {
   useAskAiMutation,
   useAddSourceMutation,
   useCreateCommentMutation,
+  useDeleteAdminCommentMutation,
   useFeedQuery,
   useHealthQuery,
   useHideItemMutation,
   useItemQuery,
+  useLockAdminItemCommentsMutation,
   useLoginMutation,
   useLogoutMutation,
   useMeQuery,
+  usePatchAdminItemMutation,
   useProfileQuery,
   useRegisterMutation,
+  useRemoveAdminItemMutation,
+  useReviewSubmissionMutation,
   useResyncSourceMutation,
   useSaveItemMutation,
   useShareItemMutation,
+  useSuspendAdminUserMutation,
   useSwitchContentModeMutation,
   useUpdateSettingsMutation,
   useUnsaveItemMutation

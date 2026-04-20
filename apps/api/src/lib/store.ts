@@ -34,6 +34,8 @@ export type AdminSnapshot = {
   sources: SourceDefinition[];
   submissions: SubmissionDto[];
   users: UserSettingsDto[];
+  items: ContentItem[];
+  comments: CommentDto[];
   errorLogs: ErrorLogDto[];
   aiConfig: AiModelConfig;
   aiUsage: AiUsageSnapshot[];
@@ -80,10 +82,13 @@ export interface AppStore {
   shareItem(itemId: string): StoreResult<ShareResult>;
   getAdminSnapshot(): StoreResult<AdminSnapshot>;
   addSource(source: Omit<SourceDefinition, 'id'>): StoreResult<SourceDefinition>;
+  reviewSubmission(submissionId: string, decision: 'approved' | 'rejected'): StoreResult<{ submission: SubmissionDto; item: ContentItem | null }>;
+  deleteComment(commentId: string, moderationNote?: string): StoreResult<CommentDto>;
   patchItem(
     itemId: string,
     patch: Partial<Pick<ContentItem, 'audience' | 'commentsLocked' | 'flags' | 'hiddenByDefault' | 'pinned'>>
   ): StoreResult<ContentItem>;
+  removeItem(itemId: string, removed: boolean): StoreResult<ContentItem>;
   pinItem(itemId: string, slot: number): StoreResult<ContentItem>;
   lockComments(itemId: string, locked: boolean): StoreResult<ContentItem>;
   suspendUser(username: string, suspended: boolean): StoreResult<UserSettingsDto>;

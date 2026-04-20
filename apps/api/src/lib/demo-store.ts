@@ -64,6 +64,8 @@ type AdminSnapshot = {
   sources: SourceDefinition[];
   submissions: SubmissionDto[];
   users: UserSettingsDto[];
+  items: ContentItem[];
+  comments: CommentDto[];
   errorLogs: ErrorLogDto[];
   aiConfig: AiModelConfig;
   aiUsage: AiUsageSnapshot[];
@@ -111,6 +113,8 @@ export class DemoStore {
     ['alex', new Set()],
     ['admin', new Set()]
   ]);
+
+  private removedItemIds = new Set<string>();
 
   private credentials = new Map<string, string>([
     ['alex', 'fieldguide123'],
@@ -291,6 +295,8 @@ export class DemoStore {
         ? this.items.filter((item) => savedIds.includes(item.id))
         : filterItemsForFeed(this.items, query.feed, mode, hiddenIds);
 
+    items = items.filter((item) => !this.removedItemIds.has(item.id));
+
     if (query.search?.trim()) {
       const lower = query.search.trim().toLowerCase();
       items = items.filter((item) => {
@@ -323,13 +329,14 @@ export class DemoStore {
     const mode = viewer?.contentMode || 'standard';
     const item = this.items.find((entry) => entry.id === idOrSlug || entry.slug === idOrSlug) || null;
     if (!item) return null;
+    if (this.removedItemIds.has(item.id)) return null;
     const allowed = filterItemsForFeed([item], 'saved', mode).length > 0;
     if (!allowed) return null;
     return item;
   }
 
   getProfileItems(username: string) {
-    return this.items.filter((item) => item.authorUsername === username);
+    return this.items.filter((item) => item.authorUsername === username && !this.removedItemIds.has(item.id));
   }
 
   listComments(itemId: string) {
@@ -456,6 +463,8 @@ export class DemoStore {
       sources: this.sources,
       submissions: this.submissions,
       users: this.users,
+      items: this.items,
+      comments: this.comments,
       errorLogs: this.errorLogs,
       aiConfig: this.aiConfig,
       aiUsage: this.aiUsage
@@ -472,6 +481,111 @@ export class DemoStore {
     return nextSource;
   }
 
+  reviewSubmission(submissionId: string, decision: 'approved' | 'rejected') {
+    const submission = this.submissions.find((entry) => entry.id === submissionId);
+    if (!submission) throw new Error('Submission not found.');
+    submission.status = decision;
+
+    let item: ContentItem | null = null;
+    if (decision === 'approved') {
+      let communitySource = this.sources.find((entry) => entry.id === 'src-community-demo');
+      if (!communitySource) {
+        communitySource = {
+          id: 'src-community-demo',
+          name: 'Fieldguide Community',
+          slug: 'community',
+          iconUrl: `${this.appUrl}/community-icon.png`,
+          siteUrl: `${this.appUrl}/community`,
+          feedUrl: `${this.appUrl}/community/feed.xml`,
+          kind: 'custom',
+          status: 'active',
+          sourceType: 'community',
+          subjects: ['community'],
+          defaultAudience: 'standard_only',
+          language: 'en',
+          description: 'Approved community submissions.'
+        };
+        this.sources.unshift(communitySource);
+      }
+
+      item =
+        this.items.find(
+          (entry) =>
+            entry.kind === 'community_post' &&
+            entry.originalTitle === submission.title &&
+            entry.authorUsername === submission.submittedBy
+        ) || null;
+
+      if (!item) {
+        item = {
+          id: `item-${randomUUID()}`,
+          slug: `${submission.title.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-')}-${randomUUID().slice(0, 8)}`,
+          kind: 'community_post',
+          sourceId: communitySource.id,
+          sourceName: communitySource.name,
+          sourceIconUrl: communitySource.iconUrl,
+          sourceUrl: communitySource.siteUrl,
+          authorUsername: submission.submittedBy,
+          publishedAt: new Date().toISOString(),
+          originalTitle: submission.title,
+          originalSummary:
+            submission.body?.slice(0, 280) || `Approved community submission shared by ${submission.submittedBy}.`,
+          coverImageUrl: communitySource.iconUrl,
+          externalUrl: submission.sourceUrl,
+          youtubeVideoId: null,
+          subject: 'community',
+          subjects: ['community'],
+          flags: ['not_verified'],
+          audience: 'standard_only',
+          pinned: false,
+          commentsLocked: false,
+          hiddenByDefault: false,
+          removedAt: null,
+          translations: [
+            {
+              language: 'en',
+              title: submission.title,
+              summary: submission.body?.slice(0, 280) || `Approved community submission shared by ${submission.submittedBy}.`,
+              slug: `${submission.title.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-')}-en`
+            },
+            {
+              language: 'bg',
+              title: submission.title,
+              summary: submission.body?.slice(0, 280) || `Approved community submission shared by ${submission.submittedBy}.`,
+              slug: `${submission.title.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-')}-bg`
+            }
+          ],
+          tags: [
+            { id: `tag-${randomUUID()}`, label: 'Community', type: 'subject', value: 'community' },
+            { id: `tag-${randomUUID()}`, label: 'Not Verified', type: 'flag', value: 'not_verified' },
+            { id: `tag-${randomUUID()}`, label: 'Standard', type: 'audience', value: 'standard_only' }
+          ],
+          bodyMarkdown: submission.body,
+          ai: {
+            summaryProvider: this.aiConfig.provider,
+            summaryModel: this.aiConfig.summaryModel,
+            translationProvider: this.aiConfig.provider,
+            translationModel: this.aiConfig.translationModel
+          }
+        };
+        this.items.unshift(item);
+      }
+    }
+
+    return {
+      submission,
+      item
+    };
+  }
+
+  deleteComment(commentId: string, moderationNote?: string) {
+    const comment = this.comments.find((entry) => entry.id === commentId);
+    if (!comment) throw new Error('Comment not found.');
+    comment.deletedAt = new Date().toISOString();
+    comment.moderationNote = moderationNote || 'Deleted by admin.';
+    return comment;
+  }
+
   patchItem(
     itemId: string,
     patch: Partial<Pick<ContentItem, 'audience' | 'commentsLocked' | 'flags' | 'hiddenByDefault' | 'pinned'>>
@@ -479,6 +593,19 @@ export class DemoStore {
     const item = this.items.find((entry) => entry.id === itemId);
     if (!item) throw new Error('Item not found.');
     Object.assign(item, patch);
+    return item;
+  }
+
+  removeItem(itemId: string, removed: boolean) {
+    const item = this.items.find((entry) => entry.id === itemId);
+    if (!item) throw new Error('Item not found.');
+    item.removedAt = removed ? new Date().toISOString() : null;
+    if (removed) {
+      this.removedItemIds.add(itemId);
+      item.pinned = false;
+    } else {
+      this.removedItemIds.delete(itemId);
+    }
     return item;
   }
 
