@@ -1,3 +1,5 @@
+'use client';
+
 import { PropsWithChildren } from 'react';
 import { Card, CardContent, Stack, Typography } from '@mui/material';
 

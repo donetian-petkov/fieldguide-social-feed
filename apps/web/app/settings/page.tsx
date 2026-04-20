@@ -1,3 +1,5 @@
+'use client';
+
 import { Box, FormControl, InputLabel, MenuItem, Select, Stack, Switch, Typography } from '@mui/material';
 
 import { AppShell } from '../components/AppShell';

@@ -16,12 +16,6 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
-    "paths": {
-      "@edu-feed/shared": [
-        "packages/shared/src"
-      ]
-    }
+    "forceConsistentCasingInFileNames": true
   }
 }

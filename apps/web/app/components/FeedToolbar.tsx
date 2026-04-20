@@ -19,8 +19,9 @@ export function FeedToolbar({ feed, language }: { feed: SubjectFeed; language: '
   const touchStartX = useRef<number | null>(null);
   const currentIndex = FEED_ORDER.indexOf(feed);
 
-  const prevFeed = FEED_ORDER[(currentIndex - 1 + FEED_ORDER.length) % FEED_ORDER.length];
-  const nextFeed = FEED_ORDER[(currentIndex + 1) % FEED_ORDER.length];
+  const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+  const prevFeed = FEED_ORDER[(safeIndex - 1 + FEED_ORDER.length) % FEED_ORDER.length] ?? 'history';
+  const nextFeed = FEED_ORDER[(safeIndex + 1) % FEED_ORDER.length] ?? 'history';
 
   const navigate = (target: SubjectFeed) => {
     if (target === 'saved') {
@@ -42,7 +43,9 @@ export function FeedToolbar({ feed, language }: { feed: SubjectFeed; language: '
       }}
       onTouchEnd={(event) => {
         if (touchStartX.current === null) return;
-        const delta = event.changedTouches[0].clientX - touchStartX.current;
+        const changedTouch = event.changedTouches[0];
+        if (!changedTouch) return;
+        const delta = changedTouch.clientX - touchStartX.current;
         if (Math.abs(delta) > 60) {
           navigate(delta > 0 ? prevFeed : nextFeed);
         }

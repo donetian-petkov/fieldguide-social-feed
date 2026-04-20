@@ -1,3 +1,5 @@
+'use client';
+
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded';
 import { Box, Button, Chip, Stack, Typography } from '@mui/material';
 

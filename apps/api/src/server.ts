@@ -42,9 +42,10 @@ app.addHook('preHandler', async (request) => {
 });
 
 app.setErrorHandler((error, _request, reply) => {
-  const statusCode = error.message.includes('Authentication') ? 401 : error.message.includes('Admin') ? 403 : 400;
+  const message = error instanceof Error ? error.message : 'Unexpected server error.';
+  const statusCode = message.includes('Authentication') ? 401 : message.includes('Admin') ? 403 : 400;
   reply.code(statusCode).send({
-    error: error.message
+    error: message
   });
 });
 

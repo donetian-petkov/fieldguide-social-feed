@@ -1,3 +1,5 @@
+'use client';
+
 import { FeedScreen } from '../../components/FeedScreen';
 import { getFeedModel, normalizeFeedSegment } from '../../lib/demo';
 

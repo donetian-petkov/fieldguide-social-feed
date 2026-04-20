@@ -114,6 +114,7 @@ model User {
   updatedAt          DateTime             @updatedAt
   settings           UserSettings?
   sessions           Session[]
+  authoredItems      ContentItem[]        @relation("AuthoredItems")
   comments           Comment[]
   albums             Album[]
   saves              SavedItem[]
@@ -203,7 +204,7 @@ model ContentItem {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   source          Source         @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  author          User?          @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  author          User?          @relation("AuthoredItems", fields: [authorId], references: [id], onDelete: SetNull)
   translations    ContentTranslation[]
   tags            ContentTag[]
   comments        Comment[]
