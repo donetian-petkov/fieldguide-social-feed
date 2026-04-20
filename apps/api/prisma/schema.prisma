@@ -90,6 +90,18 @@ enum SubmissionStatus {
   rejected
 }
 
+enum NewsletterCadence {
+  daily
+  weekly
+}
+
+enum DeliveryStatus {
+  queued
+  sent
+  skipped
+  failed
+}
+
 enum SystemScope {
   api
   worker
@@ -124,6 +136,7 @@ model User {
   passwordResetTokens PasswordResetToken[]
   modeSwitchAudits   ModeSwitchAudit[]
   aiUsage            AiUsageLedger[]
+  newsletterDeliveries NewsletterDelivery[]
 }
 
 model Session {
@@ -160,6 +173,7 @@ model Source {
   iconUrl         String
   siteUrl         String
   description     String         @db.Text
+  subjectsJson    String         @db.Text
   language        InterfaceLanguage
   defaultAudience AudienceLabel
   sourceType      SourceType
@@ -178,6 +192,7 @@ model SourceFeed {
   pollIntervalSec Int      @default(900)
   etag            String?
   lastModified    String?
+  lastError       String?  @db.Text
   lastCheckedAt   DateTime?
   source          Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
 }
@@ -185,6 +200,7 @@ model SourceFeed {
 model ContentItem {
   id              String         @id
   slug            String         @unique
+  dedupeKey       String?        @unique @db.VarChar(191)
   kind            ContentKind
   sourceId        String
   authorId        String?
@@ -213,6 +229,7 @@ model ContentItem {
   albumItems      AlbumItem[]
   pinnedSlots     PinnedSlot[]
   aiUsage         AiUsageLedger[]
+  newsletterDeliveries NewsletterDeliveryItem[]
 }
 
 model ContentTranslation {
@@ -375,4 +392,28 @@ model ModeSwitchAudit {
   verifiedAt DateTime    @default(now())
   ipAddress  String?
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model NewsletterDelivery {
+  id                String               @id @default(cuid())
+  userId            String
+  cadence           NewsletterCadence
+  status            DeliveryStatus       @default(queued)
+  subjectLine       String
+  summaryText       String?              @db.LongText
+  providerMessageId String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  user              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items             NewsletterDeliveryItem[]
+}
+
+model NewsletterDeliveryItem {
+  deliveryId String
+  itemId     String
+  position   Int
+  delivery   NewsletterDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  item       ContentItem        @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([deliveryId, itemId])
 }

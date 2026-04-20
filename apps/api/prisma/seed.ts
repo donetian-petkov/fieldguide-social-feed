@@ -15,6 +15,10 @@ import {
 
 const prisma = new PrismaClient();
 
+function buildDedupeKey(item: { sourceId: string; externalUrl: string | null; originalTitle: string }) {
+  return `${item.sourceId}:${item.externalUrl || item.originalTitle}`.slice(0, 191);
+}
+
 async function main() {
   await prisma.albumItem.deleteMany();
   await prisma.album.deleteMany();
@@ -107,6 +111,7 @@ async function main() {
         iconUrl: source.iconUrl,
         siteUrl: source.siteUrl,
         description: source.description,
+        subjectsJson: JSON.stringify(source.subjects),
         language: source.language,
         defaultAudience: source.defaultAudience,
         sourceType: source.sourceType,
@@ -126,6 +131,7 @@ async function main() {
       data: {
         id: item.id,
         slug: item.slug,
+        dedupeKey: buildDedupeKey(item),
         kind: item.kind,
         sourceId: item.sourceId,
         authorId: item.authorUsername ? userIds.get(item.authorUsername) : null,

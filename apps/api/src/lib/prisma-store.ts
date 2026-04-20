@@ -103,6 +103,7 @@ function subjectToFeed(subject: ContentItem['subject']) {
 
 function buildSourceDefinition(source: SourceWithFeeds): SourceDefinition {
   const firstFeed = source.feeds[0];
+  const subjects = JSON.parse(source.subjectsJson) as SourceDefinition['subjects'];
   return {
     id: source.id,
     name: source.name,
@@ -113,7 +114,7 @@ function buildSourceDefinition(source: SourceWithFeeds): SourceDefinition {
     kind: firstFeed?.kind || 'rss',
     status: source.status,
     sourceType: source.sourceType,
-    subjects: [source.defaultAudience === 'adult_only' ? 'community' : (source.slug.includes('photo') ? 'photography' : source.slug.includes('book') ? 'books' : source.slug.includes('film') ? 'movies' : source.slug.includes('nature') ? 'nature' : 'history')] as SourceDefinition['subjects'],
+    subjects,
     defaultAudience: source.defaultAudience,
     language: source.language,
     description: source.description
@@ -964,6 +965,7 @@ export class PrismaStore implements AppStore {
         iconUrl: source.iconUrl,
         siteUrl: source.siteUrl,
         description: source.description,
+        subjectsJson: JSON.stringify(source.subjects),
         language: source.language,
         defaultAudience: source.defaultAudience,
         sourceType: source.sourceType,

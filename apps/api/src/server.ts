@@ -7,6 +7,7 @@ import type { UserSettingsDto } from '@edu-feed/shared';
 
 import { getConfig } from './config';
 import { DemoStore } from './lib/demo-store';
+import { BullMqAppQueues, NoopQueues } from './lib/queues';
 import type { AppStore } from './lib/store';
 import { PrismaStore } from './lib/prisma-store';
 import { registerAdminRoutes } from './routes/admin';
@@ -27,6 +28,7 @@ const app = Fastify({
 });
 
 const prisma = config.DEMO_MODE ? null : new PrismaClient();
+const queues = config.DEMO_MODE ? new NoopQueues() : new BullMqAppQueues(config.REDIS_URL);
 const store: AppStore = config.DEMO_MODE
   ? new DemoStore({
       sessionTtlHours: config.SESSION_TTL_HOURS,
@@ -67,13 +69,11 @@ app.get('/health', async () => ({
 await registerAuthRoutes(app, { store, config });
 await registerFeedRoutes(app, { store });
 await registerItemRoutes(app, { store });
-await registerMeRoutes(app, { store });
-await app.register(async (instance) => registerAdminRoutes(instance, { store }), { prefix: '' });
+await registerMeRoutes(app, { store, queues });
+await app.register(async (instance) => registerAdminRoutes(instance, { store, queues }), { prefix: '' });
 
 app.addHook('onClose', async () => {
-  if (store.disconnect) {
-    await store.disconnect();
-  }
+  await Promise.allSettled([store.disconnect?.(), queues.close()]);
 });
 
 app.listen({

@@ -95,6 +95,21 @@ export const fieldguideApi = createApi({
       query: () => '/v1/admin/dashboard',
       providesTags: ['Admin']
     }),
+    addSource: builder.mutation<{ source: SourceDefinition }, Omit<SourceDefinition, 'id'>>({
+      query: (body) => ({
+        url: '/v1/admin/sources',
+        method: 'POST',
+        body
+      }),
+      invalidatesTags: ['Admin']
+    }),
+    resyncSource: builder.mutation<{ ok: boolean }, string>({
+      query: (sourceId) => ({
+        url: `/v1/admin/sources/${sourceId}/resync`,
+        method: 'POST'
+      }),
+      invalidatesTags: ['Admin']
+    }),
     login: builder.mutation<{ user: UserSettingsDto }, AuthBody>({
       query: (body) => ({
         url: '/v1/auth/login',
@@ -183,6 +198,7 @@ export const {
   useAdminDashboardQuery,
   useAlbumsQuery,
   useAskAiMutation,
+  useAddSourceMutation,
   useCreateCommentMutation,
   useFeedQuery,
   useHealthQuery,
@@ -193,6 +209,7 @@ export const {
   useMeQuery,
   useProfileQuery,
   useRegisterMutation,
+  useResyncSourceMutation,
   useSaveItemMutation,
   useShareItemMutation,
   useSwitchContentModeMutation,

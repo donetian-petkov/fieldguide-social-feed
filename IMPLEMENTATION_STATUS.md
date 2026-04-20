@@ -16,9 +16,14 @@ The project is **not complete** while any major product area is still demo-backe
 
 ## Remaining major areas
 
-- Replace demo runtime storage with Prisma/MySQL-backed persistence.
-- Complete real source ingestion and source administration flows.
-- Complete real moderation/admin persistence flows.
-- Complete AI provider/model/budget execution beyond placeholders.
-- Complete newsletter persistence and delivery.
+- Complete real moderation/admin edit, delete, and approval workflows beyond the current add, pin, lock, suspend, and resync paths.
+- Complete AI provider/model/budget execution beyond the current heuristic enrichment and ledger recording.
 - Verify the stack end-to-end against MySQL and Redis.
+
+## Latest completed areas
+
+- Prisma/MySQL-backed API persistence replaced the runtime demo store when `DEMO_MODE=false`.
+- Source subjects, feed error state, dedupe keys, and newsletter delivery history are now persisted in Prisma.
+- The API now schedules source polling and newsletter jobs through BullMQ.
+- The worker now performs persisted RSS ingestion, metadata enrichment, newsletter selection, and delivery logging.
+- Admin sources now support adding curated feeds and queueing manual resync jobs from the web UI.

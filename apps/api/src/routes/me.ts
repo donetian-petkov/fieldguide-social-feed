@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { contentModeSchema } from '@edu-feed/shared';
 
+import type { AppQueues } from '../lib/queues';
 import type { AppStore } from '../lib/store';
 
 const settingsPatchSchema = z.object({
@@ -22,7 +23,7 @@ const modeSwitchSchema = z.object({
   password: z.string().min(8).optional()
 });
 
-export async function registerMeRoutes(app: FastifyInstance, options: { store: AppStore }) {
+export async function registerMeRoutes(app: FastifyInstance, options: { store: AppStore; queues: AppQueues }) {
   app.get('/v1/me', async (request, reply) => {
     if (!request.currentUser) {
       reply.code(401);
@@ -37,9 +38,13 @@ export async function registerMeRoutes(app: FastifyInstance, options: { store: A
   app.patch('/v1/me/settings', async (request) => {
     if (!request.currentUser) throw new Error('Authentication is required.');
     const parsed = settingsPatchSchema.parse(request.body || {});
-    return {
-      user: await options.store.updateUserSettings(request.currentUser.username, parsed)
-    };
+    const user = await options.store.updateUserSettings(request.currentUser.username, parsed);
+    if (parsed.newsletterEnabled) {
+      await options.queues.scheduleNewsletter(user.username).catch((error) => {
+        app.log.warn({ error, username: user.username }, 'Failed to register newsletter schedule');
+      });
+    }
+    return { user };
   });
 
   app.post('/v1/account/content-mode/switch', async (request) => {

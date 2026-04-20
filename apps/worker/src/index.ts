@@ -3,7 +3,13 @@ import IORedis from 'ioredis';
 import pino from 'pino';
 
 import { getWorkerConfig } from './config';
-import { processAiEnrichmentJob, processIngestionJob, processNewsletterJob } from './jobs/processors';
+import {
+  bootstrapRecurringJobs,
+  processAiEnrichmentJob,
+  processIngestionJob,
+  processNewsletterJob,
+  shutdownProcessorServices
+} from './jobs/processors';
 import { QUEUES } from './jobs/types';
 
 const config = getWorkerConfig();
@@ -29,22 +35,51 @@ if (config.DEMO_MODE) {
     newsletter: new Queue(QUEUES.newsletter, { connection })
   };
 
-  new Worker(QUEUES.ingestion, async (job) => processIngestionJob(job.data), {
-    connection,
-    concurrency: config.WORKER_CONCURRENCY
+  const workers = [
+    new Worker(QUEUES.ingestion, async (job) => processIngestionJob(job.data), {
+      connection,
+      concurrency: config.WORKER_CONCURRENCY
+    }),
+    new Worker(QUEUES.aiEnrichment, async (job) => processAiEnrichmentJob(job.data), {
+      connection,
+      concurrency: config.WORKER_CONCURRENCY
+    }),
+    new Worker(QUEUES.newsletter, async (job) => processNewsletterJob(job.data), {
+      connection,
+      concurrency: 1
+    })
+  ];
+
+  await bootstrapRecurringJobs({
+    ingestion: queues.ingestion,
+    newsletter: queues.newsletter
   });
 
-  new Worker(QUEUES.aiEnrichment, async (job) => processAiEnrichmentJob(job.data), {
-    connection,
-    concurrency: config.WORKER_CONCURRENCY
+  const shutdown = async (signal: string) => {
+    logger.info({ signal }, 'Shutting down worker');
+    await Promise.allSettled([
+      ...workers.map((worker) => worker.close()),
+      ...Object.values(queues).map((queue) => queue.close()),
+      connection.quit(),
+      shutdownProcessorServices()
+    ]);
+    process.exit(0);
+  };
+
+  process.on('SIGINT', () => {
+    void shutdown('SIGINT');
+  });
+  process.on('SIGTERM', () => {
+    void shutdown('SIGTERM');
   });
 
-  new Worker(QUEUES.newsletter, async (job) => processNewsletterJob(job.data), {
-    connection,
-    concurrency: 1
+  workers.forEach((worker) => {
+    worker.on('failed', (job, error) => {
+      logger.error({ jobId: job?.id, queue: worker.name, error }, 'Worker job failed');
+    });
   });
 
   logger.info({
     queues: Object.keys(queues)
-  }, 'Worker connected to Redis and processing jobs');
+  }, 'Worker connected to Redis, scheduled recurring jobs, and processing jobs');
 }
