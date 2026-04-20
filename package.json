@@ -1,0 +1,24 @@
+{
+  "name": "edu-social-feed",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.14.0",
+    "npm": ">=10.9.2"
+  },
+  "scripts": {
+    "dev": "npm run dev -w @edu-feed/api & npm run dev -w @edu-feed/worker & npm run dev -w @edu-feed/web",
+    "dev:web": "npm run dev -w @edu-feed/web",
+    "dev:api": "npm run dev -w @edu-feed/api",
+    "dev:worker": "npm run dev -w @edu-feed/worker",
+    "build": "npm run build -w @edu-feed/shared && npm run build -w @edu-feed/api && npm run build -w @edu-feed/worker && npm run build -w @edu-feed/web",
+    "test": "npm run test -w @edu-feed/shared && npm run test -w @edu-feed/api && npm run test -w @edu-feed/web",
+    "prisma:generate": "npm run prisma:generate -w @edu-feed/api",
+    "prisma:migrate": "npm run prisma:migrate -w @edu-feed/api",
+    "seed": "npm run seed -w @edu-feed/api"
+  }
+}
