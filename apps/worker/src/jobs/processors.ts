@@ -7,8 +7,8 @@ import { DEMO_AI_CONFIG } from '@edu-feed/shared';
 import Parser from 'rss-parser';
 import { Resend } from 'resend';
 
-import { getWorkerConfig } from '../config';
-import type { AiEnrichmentJobPayload, IngestionJobPayload, NewsletterJobPayload } from './types';
+import { getWorkerConfig } from '../config.js';
+import type { AiEnrichmentJobPayload, IngestionJobPayload, NewsletterJobPayload } from './types.js';
 
 const config = getWorkerConfig();
 const prisma = new PrismaClient();

@@ -19,7 +19,7 @@ import type {
 } from '@edu-feed/shared';
 import { DEMO_AI_CONFIG, filterItemsForFeed, resolveTranslation } from '@edu-feed/shared';
 
-import type { AdminSnapshot, AppStore, FeedResponse, RegisterInput } from './store';
+import type { AdminSnapshot, AppStore, FeedResponse, RegisterInput } from './store.js';
 
 type UserWithSettings = Prisma.UserGetPayload<{
   include: {

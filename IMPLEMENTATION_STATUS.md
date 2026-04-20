@@ -16,9 +16,8 @@ The project is **not complete** while any major product area is still demo-backe
 
 ## Remaining major areas
 
-- Complete real moderation/admin edit, delete, and approval workflows beyond the current add, pin, lock, suspend, and resync paths.
 - Complete AI provider/model/budget execution beyond the current heuristic enrichment and ledger recording.
-- Verify the stack end-to-end against MySQL and Redis.
+- Expand automated verification coverage around worker ingestion scheduling and delivery paths.
 
 ## Latest completed areas
 
@@ -29,3 +28,4 @@ The project is **not complete** while any major product area is still demo-backe
 - Admin sources now support adding curated feeds and queueing manual resync jobs from the web UI.
 - Admin moderation now supports submission approval/rejection, comment deletion, item removal/restoration, and comment locking from the web UI.
 - Approved submissions now materialize into community feed/profile content instead of stopping at a pending queue record.
+- End-to-end runtime verification now runs successfully against live MySQL and Redis with database mode enabled.

@@ -5,16 +5,16 @@ import { PrismaClient } from '@prisma/client';
 
 import type { UserSettingsDto } from '@edu-feed/shared';
 
-import { getConfig } from './config';
-import { DemoStore } from './lib/demo-store';
-import { BullMqAppQueues, NoopQueues } from './lib/queues';
-import type { AppStore } from './lib/store';
-import { PrismaStore } from './lib/prisma-store';
-import { registerAdminRoutes } from './routes/admin';
-import { registerAuthRoutes } from './routes/auth';
-import { registerFeedRoutes } from './routes/feed';
-import { registerItemRoutes } from './routes/items';
-import { registerMeRoutes } from './routes/me';
+import { getConfig } from './config.js';
+import { DemoStore } from './lib/demo-store.js';
+import { BullMqAppQueues, NoopQueues } from './lib/queues.js';
+import type { AppStore } from './lib/store.js';
+import { PrismaStore } from './lib/prisma-store.js';
+import { registerAdminRoutes } from './routes/admin.js';
+import { registerAuthRoutes } from './routes/auth.js';
+import { registerFeedRoutes } from './routes/feed.js';
+import { registerItemRoutes } from './routes/items.js';
+import { registerMeRoutes } from './routes/me.js';
 
 declare module 'fastify' {
   interface FastifyRequest {

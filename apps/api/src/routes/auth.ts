@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import type { AppConfig } from '../config';
-import type { AppStore } from '../lib/store';
+import type { AppConfig } from '../config.js';
+import type { AppStore } from '../lib/store.js';
 
 const registerBodySchema = z.object({
   username: z.string().trim().min(3).max(24),

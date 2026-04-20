@@ -3,8 +3,8 @@ import { z } from 'zod';
 
 import { aiModelConfigSchema, sourceDefinitionSchema } from '@edu-feed/shared';
 
-import type { AppQueues } from '../lib/queues';
-import type { AppStore } from '../lib/store';
+import type { AppQueues } from '../lib/queues.js';
+import type { AppStore } from '../lib/store.js';
 
 const itemPatchSchema = z.object({
   audience: z.enum(['kid_safe', 'standard_only', 'adult_only']).optional(),

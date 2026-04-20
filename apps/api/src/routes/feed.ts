@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { feedQuerySchema } from '@edu-feed/shared';
 
-import type { AppStore } from '../lib/store';
+import type { AppStore } from '../lib/store.js';
 
 export async function registerFeedRoutes(app: FastifyInstance, options: { store: AppStore }) {
   app.get('/v1/feed', async (request) => {

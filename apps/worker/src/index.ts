@@ -2,15 +2,15 @@ import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import pino from 'pino';
 
-import { getWorkerConfig } from './config';
+import { getWorkerConfig } from './config.js';
 import {
   bootstrapRecurringJobs,
   processAiEnrichmentJob,
   processIngestionJob,
   processNewsletterJob,
   shutdownProcessorServices
-} from './jobs/processors';
-import { QUEUES } from './jobs/types';
+} from './jobs/processors.js';
+import { QUEUES } from './jobs/types.js';
 
 const config = getWorkerConfig();
 const logger = pino({ name: 'fieldguide-worker' });

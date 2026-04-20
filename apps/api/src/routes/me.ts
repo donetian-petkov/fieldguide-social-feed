@@ -3,8 +3,8 @@ import { z } from 'zod';
 
 import { contentModeSchema } from '@edu-feed/shared';
 
-import type { AppQueues } from '../lib/queues';
-import type { AppStore } from '../lib/store';
+import type { AppQueues } from '../lib/queues.js';
+import type { AppStore } from '../lib/store.js';
 
 const settingsPatchSchema = z.object({
   language: z.enum(['en', 'bg']).optional(),

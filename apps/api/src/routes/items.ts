@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import type { InterfaceLanguage } from '@edu-feed/shared';
 
-import type { AppStore } from '../lib/store';
+import type { AppStore } from '../lib/store.js';
 
 const commentBodySchema = z.object({
   body: z.string().trim().min(1).max(2000)
