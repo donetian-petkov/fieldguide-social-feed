@@ -1,16 +1,21 @@
 'use client';
 
-import { Box, Typography } from '@mui/material';
+import { Alert, Box, Typography } from '@mui/material';
 
 import { AppShell } from '../../components/AppShell';
 import { SectionCard } from '../../components/SectionCard';
 import { getAdminModel } from '../../lib/demo';
+import { useAdminDashboardQuery } from '../../lib/api';
+import { useSessionViewer } from '../../lib/session';
 
 export default function AdminModerationPage() {
-  const model = getAdminModel();
+  const fallback = getAdminModel();
+  const { viewer } = useSessionViewer(fallback.viewer);
+  const adminQuery = useAdminDashboardQuery();
+  const model = adminQuery.data || fallback;
 
   return (
-    <AppShell title="Admin Moderation" subtitle="Comment locks, article tags, removals, and the submission queue." viewer={model.viewer}>
+    <AppShell title="Admin Moderation" subtitle="Comment locks, article tags, removals, and the submission queue." viewer={viewer}>
       <Box
         sx={{
           display: 'grid',
@@ -34,6 +39,7 @@ export default function AdminModerationPage() {
           </Box>
         ))}
       </Box>
+      {adminQuery.isError ? <Alert sx={{ mt: 3 }} severity="warning">Showing fallback moderation data because the admin API is unavailable.</Alert> : null}
     </AppShell>
   );
 }

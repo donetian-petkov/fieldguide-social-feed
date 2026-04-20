@@ -1,16 +1,21 @@
 'use client';
 
-import { Box, Typography } from '@mui/material';
+import { Alert, Box, Typography } from '@mui/material';
 
 import { AppShell } from '../../components/AppShell';
 import { SectionCard } from '../../components/SectionCard';
 import { getAdminModel } from '../../lib/demo';
+import { useAdminDashboardQuery } from '../../lib/api';
+import { useSessionViewer } from '../../lib/session';
 
 export default function AdminAiPage() {
-  const model = getAdminModel();
+  const fallback = getAdminModel();
+  const { viewer } = useSessionViewer(fallback.viewer);
+  const adminQuery = useAdminDashboardQuery();
+  const model = adminQuery.data || fallback;
 
   return (
-    <AppShell title="Admin AI" subtitle="Provider, models, budgets, and usage tracking." viewer={model.viewer}>
+    <AppShell title="Admin AI" subtitle="Provider, models, budgets, and usage tracking." viewer={viewer}>
       <Box
         sx={{
           display: 'grid',
@@ -40,6 +45,7 @@ export default function AdminAiPage() {
           </SectionCard>
         </Box>
       </Box>
+      {adminQuery.isError ? <Alert sx={{ mt: 3 }} severity="warning">Showing fallback AI settings because the admin API is unavailable.</Alert> : null}
     </AppShell>
   );
 }

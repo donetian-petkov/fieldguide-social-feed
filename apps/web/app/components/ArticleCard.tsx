@@ -25,6 +25,8 @@ import {
 import type { ContentItem, ContentLanguageMode, InterfaceLanguage } from '@edu-feed/shared';
 import { resolveTranslation } from '@edu-feed/shared';
 
+import { useHideItemMutation, useSaveItemMutation, useShareItemMutation } from '../lib/api';
+import { useSessionViewer } from '../lib/session';
 import { AskAiCard } from './AskAiCard';
 
 export function ArticleCard({
@@ -45,6 +47,10 @@ export function ArticleCard({
   const [expanded, setExpanded] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const { isAuthenticated } = useSessionViewer();
+  const [saveItem, saveItemState] = useSaveItemMutation();
+  const [hideItem] = useHideItemMutation();
+  const [shareItem] = useShareItemMutation();
   const translation = resolveTranslation(item, language) || item.translations[0];
   const english = resolveTranslation(item, 'en');
   const bulgarian = resolveTranslation(item, 'bg');
@@ -84,7 +90,10 @@ export function ArticleCard({
               </Stack>
               <IconButton
                 aria-label="Hide item"
-                onClick={() => {
+                onClick={async () => {
+                  if (isAuthenticated) {
+                    await hideItem(item.id).unwrap().catch(() => undefined);
+                  }
                   onHide?.(item.id);
                   setToast('Article hidden from your current feed.');
                 }}
@@ -119,10 +128,36 @@ export function ArticleCard({
             <Divider />
 
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-              <Button startIcon={<BookmarkBorderRoundedIcon />} variant="outlined" onClick={() => setToast('Saved to your library.')}>
+              <Button
+                startIcon={<BookmarkBorderRoundedIcon />}
+                variant="outlined"
+                disabled={saveItemState.isLoading}
+                onClick={async () => {
+                  if (!isAuthenticated) {
+                    setToast('Sign in to save articles to albums.');
+                    return;
+                  }
+                  await saveItem(item.id).unwrap().catch(() => undefined);
+                  setToast('Saved to your library.');
+                }}
+              >
                 Save
               </Button>
-              <Button startIcon={<IosShareRoundedIcon />} variant="outlined" onClick={() => setToast('Share link copied in the full app flow.')}>
+              <Button
+                startIcon={<IosShareRoundedIcon />}
+                variant="outlined"
+                onClick={async () => {
+                  try {
+                    const result = await shareItem(item.id).unwrap();
+                    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+                      await navigator.clipboard.writeText(result.shareUrl);
+                    }
+                    setToast('Share link copied.');
+                  } catch {
+                    setToast('Share action failed.');
+                  }
+                }}
+              >
                 Share
               </Button>
               <Button component={Link} href={`/item/${item.slug}#comments`} startIcon={<ChatBubbleOutlineRoundedIcon />} variant="outlined">

@@ -5,17 +5,39 @@ import { Alert, Button, Card, CardContent, MenuItem, Stack, TextField, Typograph
 
 import type { ContentMode } from '@edu-feed/shared';
 
-export function ProtectedModeCard({ currentMode }: { currentMode: ContentMode }) {
-  const [nextMode, setNextMode] = useState<ContentMode>(currentMode);
-  const [password, setPassword] = useState('');
-  const [message, setMessage] = useState<string | null>(null);
+import { useSwitchContentModeMutation } from '../lib/api';
+import { useSessionViewer } from '../lib/session';
 
-  const handleSwitch = () => {
-    if (!password.trim() || password.trim().length < 8) {
-      setMessage('Re-enter the account password to switch Kid or Adult mode.');
+export function ProtectedModeCard({ currentMode }: { currentMode: ContentMode }) {
+  const { viewer, isAuthenticated, refetch } = useSessionViewer();
+  const [nextMode, setNextMode] = useState<ContentMode>(viewer.contentMode || currentMode);
+  const [password, setPassword] = useState('');
+  const [message, setMessage] = useState<{ type: 'info' | 'error' | 'success'; text: string } | null>(null);
+  const [switchContentMode, switchState] = useSwitchContentModeMutation();
+
+  const handleSwitch = async () => {
+    if (!isAuthenticated) {
+      setMessage({ type: 'error', text: 'Login is required before switching protected content modes.' });
       return;
     }
-    setMessage(`Protected mode verified. The next content mode would switch to ${nextMode}.`);
+    if ((nextMode !== 'standard' || viewer.contentMode !== 'standard') && (!password.trim() || password.trim().length < 8)) {
+      setMessage({ type: 'error', text: 'Re-enter the account password to switch Kid or Adult mode.' });
+      return;
+    }
+    try {
+      const result = await switchContentMode({
+        nextMode,
+        password: password.trim() || undefined
+      }).unwrap();
+      await refetch();
+      setPassword('');
+      setMessage({ type: 'success', text: `Protected mode switched to ${result.nextMode}.` });
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Protected mode verification failed.'
+      });
+    }
   };
 
   return (
@@ -43,9 +65,9 @@ export function ProtectedModeCard({ currentMode }: { currentMode: ContentMode })
             onChange={(event) => setPassword(event.target.value)}
           />
           <Button variant="contained" onClick={handleSwitch}>
-            Verify and switch
+            {switchState.isLoading ? 'Verifying...' : 'Verify and switch'}
           </Button>
-          {message ? <Alert severity="info">{message}</Alert> : null}
+          {message ? <Alert severity={message.type}>{message.text}</Alert> : null}
         </Stack>
       </CardContent>
     </Card>

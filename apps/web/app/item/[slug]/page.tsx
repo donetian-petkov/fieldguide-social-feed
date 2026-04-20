@@ -1,17 +1,30 @@
 'use client';
 
 import ArrowOutwardRoundedIcon from '@mui/icons-material/ArrowOutwardRounded';
-import { Box, Button, Chip, Stack, Typography } from '@mui/material';
+import { useState } from 'react';
+import { Alert, Box, Button, Chip, Stack, TextField, Typography } from '@mui/material';
 
 import { AppShell } from '../../components/AppShell';
 import { AskAiCard } from '../../components/AskAiCard';
 import { ArticleCard } from '../../components/ArticleCard';
 import { SectionCard } from '../../components/SectionCard';
 import { getItemModel, demoViewer } from '../../lib/demo';
+import { useCreateCommentMutation, useItemQuery } from '../../lib/api';
+import { useSessionViewer } from '../../lib/session';
 
 export default function ItemPage({ params }: { params: { slug: string } }) {
-  const model = getItemModel(params.slug);
-  if (!model) {
+  const fallback = getItemModel(params.slug);
+  const { viewer, isAuthenticated } = useSessionViewer(demoViewer);
+  const itemQuery = useItemQuery(params.slug);
+  const [createComment, createCommentState] = useCreateCommentMutation();
+  const [commentBody, setCommentBody] = useState('');
+  const [commentMessage, setCommentMessage] = useState<string | null>(null);
+  const item = itemQuery.data?.item || fallback?.item || null;
+  const comments = itemQuery.data?.comments || fallback?.comments || [];
+  const relatedItems = fallback?.relatedItems || [];
+  const translation = item ? item.translations.find((entry) => entry.language === viewer.language) || item.translations[0] : null;
+
+  if (!item || !translation) {
     return (
       <AppShell title="Item not found" subtitle="The requested article or video does not exist in the demo dataset." viewer={demoViewer}>
         <Typography variant="body1">Try another item from the main feed.</Typography>
@@ -20,17 +33,17 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
   }
 
   return (
-    <AppShell title={model.translation?.title || model.item.originalTitle} subtitle={model.item.sourceName} viewer={demoViewer}>
+    <AppShell title={translation.title || item.originalTitle} subtitle={item.sourceName} viewer={viewer}>
       <Stack spacing={3}>
         <Box
           component="img"
-          src={model.item.coverImageUrl}
-          alt={model.translation?.title || model.item.originalTitle}
+          src={item.coverImageUrl}
+          alt={translation.title || item.originalTitle}
           sx={{ width: '100%', height: { xs: 240, md: 380 }, objectFit: 'cover', borderRadius: 4 }}
         />
 
         <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-          {model.item.tags.map((tag) => (
+          {item.tags.map((tag) => (
             <Chip key={tag.id} label={tag.label} />
           ))}
         </Stack>
@@ -48,17 +61,17 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
           <Box>
             <Stack spacing={3}>
               <SectionCard title="Summary" eyebrow="AI translated and compressed">
-                <Typography variant="body1">{model.translation?.summary}</Typography>
-                {model.item.bodyMarkdown ? (
+                <Typography variant="body1">{translation.summary}</Typography>
+                {item.bodyMarkdown ? (
                   <Typography variant="body2" color="text.secondary">
-                    {model.item.bodyMarkdown}
+                    {item.bodyMarkdown}
                   </Typography>
                 ) : null}
               </SectionCard>
 
               <SectionCard title="Comments" eyebrow="Flat thread">
                 <Stack id="comments" spacing={2}>
-                  {model.comments.map((comment) => (
+                  {comments.map((comment) => (
                     <Box key={comment.id} sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 2 }}>
                       <Typography variant="subtitle2">{comment.authorDisplayName}</Typography>
                       <Typography variant="caption" color="text.secondary">
@@ -69,6 +82,34 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
                       </Typography>
                     </Box>
                   ))}
+                  <TextField
+                    multiline
+                    minRows={3}
+                    label="Add a comment"
+                    value={commentBody}
+                    onChange={(event) => setCommentBody(event.target.value)}
+                    placeholder={isAuthenticated ? 'Add your comment' : 'Login to comment'}
+                    disabled={!isAuthenticated}
+                  />
+                  <Button
+                    variant="contained"
+                    disabled={!isAuthenticated || !commentBody.trim() || createCommentState.isLoading}
+                    onClick={async () => {
+                      try {
+                        await createComment({
+                          itemId: item.id,
+                          body: commentBody
+                        }).unwrap();
+                        setCommentBody('');
+                        setCommentMessage('Comment submitted.');
+                      } catch (error) {
+                        setCommentMessage(error instanceof Error ? error.message : 'Comment request failed.');
+                      }
+                    }}
+                  >
+                    {createCommentState.isLoading ? 'Posting...' : 'Post comment'}
+                  </Button>
+                  {commentMessage ? <Alert severity="info">{commentMessage}</Alert> : null}
                 </Stack>
               </SectionCard>
             </Stack>
@@ -76,11 +117,11 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
 
           <Box>
             <Stack spacing={3}>
-              <AskAiCard item={model.item} language={demoViewer.language} />
+              <AskAiCard item={item} language={viewer.language} />
               <SectionCard title="Original source" eyebrow="Outbound">
                 <Button
                   component="a"
-                  href={model.item.externalUrl || '#'}
+                  href={item.externalUrl || '#'}
                   target="_blank"
                   rel="noreferrer"
                   endIcon={<ArrowOutwardRoundedIcon />}
@@ -95,12 +136,12 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
 
         <SectionCard title="Related items" eyebrow="More to research">
           <Stack spacing={2}>
-            {model.relatedItems.map((item) => (
+            {relatedItems.map((relatedItem) => (
               <ArticleCard
-                key={item.id}
-                item={item}
-                language={demoViewer.language}
-                languageMode={demoViewer.contentLanguageMode}
+                key={relatedItem.id}
+                item={relatedItem}
+                language={viewer.language}
+                languageMode={viewer.contentLanguageMode}
                 commentCount={0}
               />
             ))}

@@ -2,6 +2,7 @@
 
 import { PropsWithChildren, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
@@ -30,6 +31,9 @@ import {
 
 import type { UserSettingsDto } from '@edu-feed/shared';
 
+import { useLogoutMutation } from '../lib/api';
+import { useSessionViewer } from '../lib/session';
+
 const DRAWER_WIDTH = 280;
 
 export function AppShell({
@@ -38,8 +42,11 @@ export function AppShell({
   viewer,
   children
 }: PropsWithChildren<{ title: string; subtitle: string; viewer: UserSettingsDto }>) {
+  const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const { viewer: resolvedViewer, isAuthenticated } = useSessionViewer(viewer);
+  const [logout, logoutState] = useLogoutMutation();
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -54,9 +61,10 @@ export function AppShell({
     { href: '/feed/history', label: 'Main feed', icon: <AutoAwesomeRoundedIcon /> },
     { href: '/saved', label: 'Saved', icon: <BookmarkRoundedIcon /> },
     { href: '/community', label: 'Community', icon: <ForumRoundedIcon /> },
-    { href: '/profile/alex', label: 'Profile', icon: <PersonRoundedIcon /> },
+    { href: `/profile/${resolvedViewer.username}`, label: 'Profile', icon: <PersonRoundedIcon /> },
     { href: '/settings', label: 'Settings', icon: <SettingsRoundedIcon /> },
-    { href: '/admin', label: 'Admin', icon: <ShieldRoundedIcon /> }
+    ...(resolvedViewer.role === 'admin' ? [{ href: '/admin', label: 'Admin', icon: <ShieldRoundedIcon /> }] : []),
+    ...(!isAuthenticated ? [{ href: '/auth', label: 'Login', icon: <PersonRoundedIcon /> }] : [])
   ];
 
   const drawer = (
@@ -76,16 +84,33 @@ export function AppShell({
         ))}
       </List>
       <Box sx={{ mt: 'auto', borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
-        <Typography variant="subtitle2">{viewer.displayName}</Typography>
+        <Typography variant="subtitle2">{resolvedViewer.displayName}</Typography>
         <Typography variant="body2" color="text.secondary">
-          {viewer.username} • {viewer.role}
+          {resolvedViewer.username} • {resolvedViewer.role}
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Mode: {viewer.contentMode}
+          Mode: {resolvedViewer.contentMode}
         </Typography>
-        <Button startIcon={<LogoutRoundedIcon />} variant="outlined" fullWidth sx={{ mt: 2 }}>
-          Logout
-        </Button>
+        {isAuthenticated ? (
+          <Button
+            startIcon={<LogoutRoundedIcon />}
+            variant="outlined"
+            fullWidth
+            sx={{ mt: 2 }}
+            disabled={logoutState.isLoading}
+            onClick={async () => {
+              await logout().unwrap().catch(() => undefined);
+              router.push('/auth');
+              router.refresh();
+            }}
+          >
+            Logout
+          </Button>
+        ) : (
+          <Button component={Link} href="/auth" variant="contained" fullWidth sx={{ mt: 2 }}>
+            Login / Register
+          </Button>
+        )}
       </Box>
     </Stack>
   );

@@ -1,28 +1,40 @@
 'use client';
 
 import { startTransition, useState } from 'react';
-import { Button, Card, CardContent, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Button, Card, CardContent, Stack, TextField, Typography } from '@mui/material';
 
 import type { ContentItem, InterfaceLanguage } from '@edu-feed/shared';
 import { resolveTranslation } from '@edu-feed/shared';
 
+import { useAskAiMutation } from '../lib/api';
+
 export function AskAiCard({ item, language }: { item: ContentItem; language: InterfaceLanguage }) {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [askAi, askAiState] = useAskAiMutation();
   const translation = resolveTranslation(item, language);
 
-  const handleAsk = () => {
+  const handleAsk = async () => {
     if (!question.trim()) return;
-    setLoading(true);
-    startTransition(() => {
-      const nextAnswer =
+    setErrorMessage(null);
+    try {
+      const result = await askAi({
+        itemId: item.id,
+        question,
+        language
+      }).unwrap();
+      startTransition(() => {
+        setAnswer(result.answer);
+      });
+    } catch (error) {
+      const fallbackAnswer =
         language === 'bg'
           ? `Започни с източника "${translation?.title}". Потърси автора, вида доказателства и какви музеи, архиви или свързани теми можеш да сравниш после.`
           : `Start with the source context for "${translation?.title}". Look at the author, the type of evidence used, and which museums, archives, or related works could deepen your research next.`;
-      setAnswer(nextAnswer);
-      setLoading(false);
-    });
+      setAnswer(fallbackAnswer);
+      setErrorMessage(error instanceof Error ? error.message : 'Ask-AI request failed. Using fallback guidance.');
+    }
   };
 
   return (
@@ -42,9 +54,10 @@ export function AskAiCard({ item, language }: { item: ContentItem; language: Int
             onChange={(event) => setQuestion(event.target.value)}
             placeholder={language === 'bg' ? 'Например: Какви източници да потърся след това?' : 'For example: Which sources should I read next?'}
           />
-          <Button variant="contained" onClick={handleAsk} disabled={loading}>
-            {loading ? 'Thinking...' : 'Ask'}
+          <Button variant="contained" onClick={handleAsk} disabled={askAiState.isLoading}>
+            {askAiState.isLoading ? 'Thinking...' : 'Ask'}
           </Button>
+          {errorMessage ? <Alert severity="warning">{errorMessage}</Alert> : null}
           {answer ? (
             <Typography variant="body2" color="text.secondary">
               {answer}

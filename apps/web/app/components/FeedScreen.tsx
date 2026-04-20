@@ -7,7 +7,9 @@ import { Box, Card, CardContent, Divider, Snackbar, Stack, Typography } from '@m
 import type { ContentItem, SubjectFeed, UserSettingsDto } from '@edu-feed/shared';
 import { resolveTranslation } from '@edu-feed/shared';
 
+import { useFeedQuery } from '../lib/api';
 import { getCommentsCountByItem } from '../lib/demo';
+import { useSessionViewer } from '../lib/session';
 import { AppShell } from './AppShell';
 import { ArticleCard } from './ArticleCard';
 import { FeedToolbar } from './FeedToolbar';
@@ -17,9 +19,6 @@ export function FeedScreen({
   title,
   subtitle,
   viewer,
-  language,
-  languageMode,
-  imageMode,
   items,
   pinnedItems
 }: {
@@ -27,22 +26,27 @@ export function FeedScreen({
   title: string;
   subtitle: string;
   viewer: UserSettingsDto;
-  language: 'en' | 'bg';
-  languageMode: 'single' | 'dual';
-  imageMode: 'on' | 'off';
   items: ContentItem[];
   pinnedItems: ContentItem[];
 }) {
   const [hiddenIds, setHiddenIds] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
-  const visibleItems = items.filter((item) => !hiddenIds.includes(item.id));
+  const session = useSessionViewer(viewer);
+  const feedQuery = useFeedQuery({ feed });
+  const resolvedViewer = session.viewer;
+  const resolvedLanguage = resolvedViewer.language as 'en' | 'bg';
+  const resolvedLanguageMode = resolvedViewer.contentLanguageMode;
+  const resolvedImageMode = resolvedViewer.imageMode;
+  const effectiveItems = feedQuery.data?.items || items;
+  const effectivePinnedItems = feedQuery.data?.pinnedItems || pinnedItems;
+  const visibleItems = effectiveItems.filter((item) => !hiddenIds.includes(item.id));
 
   return (
-    <AppShell title={title} subtitle={subtitle} viewer={viewer}>
+    <AppShell title={title} subtitle={subtitle} viewer={resolvedViewer}>
       <Stack spacing={3}>
-        <FeedToolbar feed={feed} language={language} />
+        <FeedToolbar feed={feed} language={resolvedLanguage} />
 
-        {pinnedItems.length ? (
+        {effectivePinnedItems.length ? (
           <Card sx={{ border: '1px solid', borderColor: 'divider' }}>
             <CardContent>
               <Stack spacing={2}>
@@ -57,8 +61,8 @@ export function FeedScreen({
                     }
                   }}
                 >
-                  {pinnedItems.map((item) => {
-                    const translation = resolveTranslation(item, language);
+                  {effectivePinnedItems.map((item) => {
+                    const translation = resolveTranslation(item, resolvedLanguage);
                     return (
                       <Box key={item.id}>
                         <Card variant="outlined" sx={{ height: '100%' }}>
@@ -95,10 +99,10 @@ export function FeedScreen({
             <ArticleCard
               key={item.id}
               item={item}
-              language={language}
-              languageMode={languageMode}
+              language={resolvedLanguage}
+              languageMode={resolvedLanguageMode}
               commentCount={getCommentsCountByItem(item.id)}
-              showImage={imageMode === 'on'}
+              showImage={resolvedImageMode === 'on'}
               onHide={(itemId) => {
                 setHiddenIds((current) => [...current, itemId]);
                 setToast('Item hidden from the current view.');
@@ -110,9 +114,19 @@ export function FeedScreen({
         {!visibleItems.length ? (
           <Card variant="outlined">
             <CardContent>
-              <Typography variant="h6">No items remain in this view</Typography>
+                <Typography variant="h6">No items remain in this view</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Change the content mode, clear hidden items, or switch subjects.
+                </Typography>
+              </CardContent>
+            </Card>
+          ) : null}
+
+        {feedQuery.isError ? (
+          <Card variant="outlined">
+            <CardContent>
               <Typography variant="body2" color="text.secondary">
-                Change the content mode, clear hidden items, or switch subjects.
+                API feed refresh failed, so the page is showing bundled fallback data.
               </Typography>
             </CardContent>
           </Card>

@@ -12,9 +12,6 @@ export default function CommunityPage() {
       title={model.title}
       subtitle="Approved community links and essays stay separate from the curated editorial source feeds."
       viewer={model.viewer}
-      language={model.language}
-      languageMode={model.viewer.contentLanguageMode}
-      imageMode={model.viewer.imageMode}
       items={model.items}
       pinnedItems={[]}
     />

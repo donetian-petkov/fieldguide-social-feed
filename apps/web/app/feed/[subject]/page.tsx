@@ -13,9 +13,6 @@ export default function SubjectFeedPage({ params }: { params: { subject: string 
       title={model.title}
       subtitle={model.subtitle}
       viewer={model.viewer}
-      language={model.language}
-      languageMode={model.viewer.contentLanguageMode}
-      imageMode={model.viewer.imageMode}
       items={model.items}
       pinnedItems={model.pinnedItems}
     />

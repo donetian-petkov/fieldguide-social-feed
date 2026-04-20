@@ -1,18 +1,25 @@
 'use client';
 
-import { Box, FormControl, InputLabel, MenuItem, Select, Stack, Switch, Typography } from '@mui/material';
+import { useState } from 'react';
+import { Alert, Box, FormControl, InputLabel, MenuItem, Select, Stack, Switch, Typography } from '@mui/material';
 
 import { AppShell } from '../components/AppShell';
 import { ProtectedModeCard } from '../components/ProtectedModeCard';
 import { SectionCard } from '../components/SectionCard';
 import { getSavedAlbumsForViewer, getSettingsModel } from '../lib/demo';
+import { useAlbumsQuery, useUpdateSettingsMutation } from '../lib/api';
+import { useSessionViewer } from '../lib/session';
 
 export default function SettingsPage() {
   const model = getSettingsModel();
-  const albums = getSavedAlbumsForViewer();
+  const { viewer } = useSessionViewer(model.viewer);
+  const albumsQuery = useAlbumsQuery();
+  const [updateSettings] = useUpdateSettingsMutation();
+  const [message, setMessage] = useState<string | null>(null);
+  const albums = albumsQuery.data?.albums || getSavedAlbumsForViewer();
 
   return (
-    <AppShell title="Settings" subtitle="Visual presets, content protection, newsletters, and AI preferences." viewer={model.viewer}>
+    <AppShell title="Settings" subtitle="Visual presets, content protection, newsletters, and AI preferences." viewer={viewer}>
       <Box
         sx={{
           display: 'grid',
@@ -28,7 +35,14 @@ export default function SettingsPage() {
             <Stack spacing={2}>
               <FormControl fullWidth>
                 <InputLabel>Vibe</InputLabel>
-                <Select label="Vibe" defaultValue={model.viewer.vibePreset}>
+                <Select
+                  label="Vibe"
+                  value={viewer.vibePreset}
+                  onChange={async (event) => {
+                    await updateSettings({ vibePreset: event.target.value as typeof viewer.vibePreset }).unwrap().catch(() => undefined);
+                    setMessage('Vibe preference saved.');
+                  }}
+                >
                   <MenuItem value="museum">Museum</MenuItem>
                   <MenuItem value="archive">Archive</MenuItem>
                   <MenuItem value="field_notes">Field Notes</MenuItem>
@@ -38,25 +52,44 @@ export default function SettingsPage() {
               </FormControl>
               <FormControl fullWidth>
                 <InputLabel>Language mode</InputLabel>
-                <Select label="Language mode" defaultValue={model.viewer.contentLanguageMode}>
+                <Select
+                  label="Language mode"
+                  value={viewer.contentLanguageMode}
+                  onChange={async (event) => {
+                    await updateSettings({ contentLanguageMode: event.target.value as typeof viewer.contentLanguageMode }).unwrap().catch(() => undefined);
+                    setMessage('Language mode saved.');
+                  }}
+                >
                   <MenuItem value="single">Single</MenuItem>
                   <MenuItem value="dual">Dual</MenuItem>
                 </Select>
               </FormControl>
               <Stack direction="row" alignItems="center" justifyContent="space-between">
                 <Typography>Images on/off</Typography>
-                <Switch defaultChecked={model.viewer.imageMode === 'on'} />
+                <Switch
+                  checked={viewer.imageMode === 'on'}
+                  onChange={async (_event, checked) => {
+                    await updateSettings({ imageMode: checked ? 'on' : 'off' }).unwrap().catch(() => undefined);
+                    setMessage('Image preference saved.');
+                  }}
+                />
               </Stack>
               <Stack direction="row" alignItems="center" justifyContent="space-between">
                 <Typography>Newsletter enabled</Typography>
-                <Switch defaultChecked={model.viewer.newsletterEnabled} />
+                <Switch
+                  checked={viewer.newsletterEnabled}
+                  onChange={async (_event, checked) => {
+                    await updateSettings({ newsletterEnabled: checked }).unwrap().catch(() => undefined);
+                    setMessage('Newsletter preference saved.');
+                  }}
+                />
               </Stack>
             </Stack>
           </SectionCard>
         </Box>
 
         <Box>
-          <ProtectedModeCard currentMode={model.viewer.contentMode} />
+          <ProtectedModeCard currentMode={viewer.contentMode} />
         </Box>
 
         <Box>
@@ -87,6 +120,7 @@ export default function SettingsPage() {
           </SectionCard>
         </Box>
       </Box>
+      {message ? <Alert sx={{ mt: 3 }} severity="success">{message}</Alert> : null}
     </AppShell>
   );
 }
