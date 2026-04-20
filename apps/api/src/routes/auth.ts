@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import type { AppConfig } from '../config';
-import { DemoStore } from '../lib/demo-store';
+import type { AppStore } from '../lib/store';
 
 const registerBodySchema = z.object({
   username: z.string().trim().min(3).max(24),
@@ -28,10 +28,10 @@ const verifyPasswordBodySchema = z.object({
   password: z.string().min(8)
 });
 
-export async function registerAuthRoutes(app: FastifyInstance, options: { store: DemoStore; config: AppConfig }) {
+export async function registerAuthRoutes(app: FastifyInstance, options: { store: AppStore; config: AppConfig }) {
   app.post('/v1/auth/register', async (request, reply) => {
     const parsed = registerBodySchema.parse(request.body || {});
-    const result = options.store.register(parsed);
+    const result = await options.store.register(parsed);
     reply.setCookie('fieldguide_session', result.sessionId, {
       httpOnly: true,
       sameSite: 'lax',
@@ -45,7 +45,7 @@ export async function registerAuthRoutes(app: FastifyInstance, options: { store:
 
   app.post('/v1/auth/login', async (request, reply) => {
     const parsed = loginBodySchema.parse(request.body || {});
-    const result = options.store.login(parsed.username, parsed.password);
+    const result = await options.store.login(parsed.username, parsed.password);
     reply.setCookie('fieldguide_session', result.sessionId, {
       httpOnly: true,
       sameSite: 'lax',
@@ -58,7 +58,7 @@ export async function registerAuthRoutes(app: FastifyInstance, options: { store:
   });
 
   app.post('/v1/auth/logout', async (request, reply) => {
-    options.store.logout(request.cookies.fieldguide_session);
+    await options.store.logout(request.cookies.fieldguide_session);
     reply.clearCookie('fieldguide_session', {
       path: '/'
     });
@@ -82,7 +82,7 @@ export async function registerAuthRoutes(app: FastifyInstance, options: { store:
     if (!request.currentUser) {
       return replyUnauthorized();
     }
-    const verifiedUntil = options.store.verifyPassword(request.currentUser.username, parsed.password);
+    const verifiedUntil = await options.store.verifyPassword(request.currentUser.username, parsed.password);
     return {
       ok: true,
       verifiedUntil

@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import type { InterfaceLanguage } from '@edu-feed/shared';
 
-import { DemoStore } from '../lib/demo-store';
+import type { AppStore } from '../lib/store';
 
 const commentBodySchema = z.object({
   body: z.string().trim().min(1).max(2000)
@@ -30,17 +30,17 @@ const submissionBodySchema = z.object({
   body: z.string().trim().nullable().optional()
 });
 
-export async function registerItemRoutes(app: FastifyInstance, options: { store: DemoStore }) {
+export async function registerItemRoutes(app: FastifyInstance, options: { store: AppStore }) {
   app.get('/v1/items/:id', async (request, reply) => {
     const params = request.params as { id: string };
-    const item = options.store.getItem(params.id, request.currentUser?.username);
+    const item = await options.store.getItem(params.id, request.currentUser?.username);
     if (!item) {
       reply.code(404);
       return { error: 'Item not found.' };
     }
     return {
       item,
-      comments: options.store.listComments(item.id)
+      comments: await options.store.listComments(item.id)
     };
   });
 
@@ -67,7 +67,7 @@ export async function registerItemRoutes(app: FastifyInstance, options: { store:
     const params = request.params as { id: string };
     const parsed = commentBodySchema.parse(request.body || {});
     return {
-      comment: options.store.addComment(request.currentUser.username, params.id, parsed.body)
+      comment: await options.store.addComment(request.currentUser.username, params.id, parsed.body)
     };
   });
 
@@ -85,7 +85,7 @@ export async function registerItemRoutes(app: FastifyInstance, options: { store:
   app.get('/v1/albums', async (request) => {
     if (!request.currentUser) throw new Error('Authentication is required.');
     return {
-      albums: options.store.getAlbums(request.currentUser.username)
+      albums: await options.store.getAlbums(request.currentUser.username)
     };
   });
 
@@ -93,7 +93,7 @@ export async function registerItemRoutes(app: FastifyInstance, options: { store:
     if (!request.currentUser) throw new Error('Authentication is required.');
     const parsed = albumBodySchema.parse(request.body || {});
     return {
-      album: options.store.createAlbum(request.currentUser.username, parsed.title, parsed.description)
+      album: await options.store.createAlbum(request.currentUser.username, parsed.title, parsed.description)
     };
   });
 
@@ -102,7 +102,7 @@ export async function registerItemRoutes(app: FastifyInstance, options: { store:
     const params = request.params as { id: string };
     const parsed = albumItemBodySchema.parse(request.body || {});
     return {
-      album: options.store.addAlbumItem(request.currentUser.username, params.id, parsed.itemId)
+      album: await options.store.addAlbumItem(request.currentUser.username, params.id, parsed.itemId)
     };
   });
 
@@ -110,7 +110,7 @@ export async function registerItemRoutes(app: FastifyInstance, options: { store:
     if (!request.currentUser) throw new Error('Authentication is required.');
     const parsed = submissionBodySchema.parse(request.body || {});
     return {
-      submission: options.store.createSubmission(request.currentUser.username, parsed)
+      submission: await options.store.createSubmission(request.currentUser.username, parsed)
     };
   });
 }

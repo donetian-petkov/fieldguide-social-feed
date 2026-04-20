@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { aiModelConfigSchema, sourceDefinitionSchema } from '@edu-feed/shared';
 
-import { DemoStore } from '../lib/demo-store';
+import type { AppStore } from '../lib/store';
 
 const itemPatchSchema = z.object({
   audience: z.enum(['kid_safe', 'standard_only', 'adult_only']).optional(),
@@ -25,7 +25,7 @@ const suspendBodySchema = z.object({
   suspended: z.boolean().default(true)
 });
 
-export async function registerAdminRoutes(app: FastifyInstance, options: { store: DemoStore }) {
+export async function registerAdminRoutes(app: FastifyInstance, options: { store: AppStore }) {
   app.addHook('preHandler', async (request) => {
     if (!request.currentUser || request.currentUser.role !== 'admin') {
       throw new Error('Admin access is required.');
@@ -38,14 +38,14 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
 
   app.get('/v1/admin/sources', async () => {
     return {
-      sources: options.store.listSources()
+      sources: await options.store.listSources()
     };
   });
 
   app.post('/v1/admin/sources', async (request) => {
     const parsed = sourceDefinitionSchema.omit({ id: true }).parse(request.body || {});
     return {
-      source: options.store.addSource(parsed)
+      source: await options.store.addSource(parsed)
     };
   });
 
@@ -53,7 +53,7 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
     const params = request.params as { id: string };
     const parsed = itemPatchSchema.parse(request.body || {});
     return {
-      item: options.store.patchItem(params.id, parsed)
+      item: await options.store.patchItem(params.id, parsed)
     };
   });
 
@@ -61,7 +61,7 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
     const params = request.params as { id: string };
     const parsed = pinBodySchema.parse(request.body || {});
     return {
-      item: options.store.pinItem(params.id, parsed.slot)
+      item: await options.store.pinItem(params.id, parsed.slot)
     };
   });
 
@@ -69,7 +69,7 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
     const params = request.params as { id: string };
     const parsed = lockBodySchema.parse(request.body || {});
     return {
-      item: options.store.lockComments(params.id, parsed.locked)
+      item: await options.store.lockComments(params.id, parsed.locked)
     };
   });
 
@@ -77,14 +77,14 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
     const params = request.params as { id: string };
     const parsed = suspendBodySchema.parse(request.body || {});
     return {
-      user: options.store.suspendUser(params.id, parsed.suspended)
+      user: await options.store.suspendUser(params.id, parsed.suspended)
     };
   });
 
   app.put('/v1/admin/ai/config', async (request) => {
     const parsed = aiModelConfigSchema.partial().parse(request.body || {});
     return {
-      config: options.store.updateAiConfig(parsed)
+      config: await options.store.updateAiConfig(parsed)
     };
   });
 }

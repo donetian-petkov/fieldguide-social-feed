@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { contentModeSchema } from '@edu-feed/shared';
 
-import { DemoStore } from '../lib/demo-store';
+import type { AppStore } from '../lib/store';
 
 const settingsPatchSchema = z.object({
   language: z.enum(['en', 'bg']).optional(),
@@ -22,7 +22,7 @@ const modeSwitchSchema = z.object({
   password: z.string().min(8).optional()
 });
 
-export async function registerMeRoutes(app: FastifyInstance, options: { store: DemoStore }) {
+export async function registerMeRoutes(app: FastifyInstance, options: { store: AppStore }) {
   app.get('/v1/me', async (request, reply) => {
     if (!request.currentUser) {
       reply.code(401);
@@ -30,7 +30,7 @@ export async function registerMeRoutes(app: FastifyInstance, options: { store: D
     }
     return {
       user: request.currentUser,
-      albums: options.store.getAlbums(request.currentUser.username)
+      albums: await options.store.getAlbums(request.currentUser.username)
     };
   });
 
@@ -38,7 +38,7 @@ export async function registerMeRoutes(app: FastifyInstance, options: { store: D
     if (!request.currentUser) throw new Error('Authentication is required.');
     const parsed = settingsPatchSchema.parse(request.body || {});
     return {
-      user: options.store.updateUserSettings(request.currentUser.username, parsed)
+      user: await options.store.updateUserSettings(request.currentUser.username, parsed)
     };
   });
 
@@ -50,7 +50,7 @@ export async function registerMeRoutes(app: FastifyInstance, options: { store: D
 
   app.get('/v1/profile/:username', async (request, reply) => {
     const params = request.params as { username: string };
-    const profileItems = options.store.getProfileItems(params.username);
+    const profileItems = await options.store.getProfileItems(params.username);
     if (!profileItems.length) {
       reply.code(404);
       return { error: 'Profile not found.' };

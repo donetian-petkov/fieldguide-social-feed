@@ -1,0 +1,1263 @@
+import { createHash, randomUUID } from 'node:crypto';
+
+import argon2 from 'argon2';
+import { PrismaClient, type Prisma } from '@prisma/client';
+import type {
+  AiModelConfig,
+  AiUsageSnapshot,
+  AlbumDto,
+  CommentDto,
+  ContentItem,
+  ContentMode,
+  ContentTag,
+  FeedQuery,
+  InterfaceLanguage,
+  ModerationFlag,
+  SourceDefinition,
+  SubmissionDto,
+  UserSettingsDto
+} from '@edu-feed/shared';
+import { DEMO_AI_CONFIG, filterItemsForFeed, resolveTranslation } from '@edu-feed/shared';
+
+import type { AdminSnapshot, AppStore, FeedResponse, RegisterInput } from './store';
+
+type UserWithSettings = Prisma.UserGetPayload<{
+  include: {
+    settings: true;
+  };
+}>;
+
+type SourceWithFeeds = Prisma.SourceGetPayload<{
+  include: {
+    feeds: true;
+  };
+}>;
+
+type ItemWithRelations = Prisma.ContentItemGetPayload<{
+  include: {
+    source: {
+      include: {
+        feeds: true;
+      };
+    };
+    author: {
+      include: {
+        settings: true;
+      };
+    };
+    translations: true;
+    tags: true;
+  };
+}>;
+
+type CommentWithAuthor = Prisma.CommentGetPayload<{
+  include: {
+    author: {
+      include: {
+        settings: true;
+      };
+    };
+  };
+}>;
+
+type AlbumWithRelations = Prisma.AlbumGetPayload<{
+  include: {
+    owner: true;
+    items: {
+      orderBy: {
+        position: 'asc';
+      };
+    };
+  };
+}>;
+
+type SubmissionWithUser = Prisma.SubmissionGetPayload<{
+  include: {
+    submittedBy: true;
+  };
+}>;
+
+const DEFAULT_FONT = '"Fraunces", "Georgia", serif';
+
+function hashToken(token: string) {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function audienceLabelText(audience: ContentItem['audience']) {
+  if (audience === 'kid_safe') return 'Kid Safe';
+  if (audience === 'adult_only') return 'Adult Only';
+  return 'Standard';
+}
+
+function moderationLabel(flag: ModerationFlag) {
+  if (flag === 'not_verified') return 'Not Verified';
+  if (flag === 'sensitive_history') return 'Sensitive History';
+  return flag.toUpperCase();
+}
+
+function subjectToFeed(subject: ContentItem['subject']) {
+  if (subject === 'country_knowledge') return 'country-knowledge';
+  if (subject === 'video') return 'videos';
+  return subject;
+}
+
+function buildSourceDefinition(source: SourceWithFeeds): SourceDefinition {
+  const firstFeed = source.feeds[0];
+  return {
+    id: source.id,
+    name: source.name,
+    slug: source.slug,
+    iconUrl: source.iconUrl,
+    siteUrl: source.siteUrl,
+    feedUrl: firstFeed?.feedUrl || source.siteUrl,
+    kind: firstFeed?.kind || 'rss',
+    status: source.status,
+    sourceType: source.sourceType,
+    subjects: [source.defaultAudience === 'adult_only' ? 'community' : (source.slug.includes('photo') ? 'photography' : source.slug.includes('book') ? 'books' : source.slug.includes('film') ? 'movies' : source.slug.includes('nature') ? 'nature' : 'history')] as SourceDefinition['subjects'],
+    defaultAudience: source.defaultAudience,
+    language: source.language,
+    description: source.description
+  };
+}
+
+function buildUserDto(user: UserWithSettings): UserSettingsDto {
+  const settings = user.settings;
+  return {
+    username: user.username,
+    displayName: settings?.displayName || user.username,
+    role: user.role,
+    language: settings?.language || 'en',
+    contentLanguageMode: settings?.contentLanguageMode || 'single',
+    vibePreset: settings?.vibePreset || 'museum',
+    fontFamily: settings?.fontFamily || DEFAULT_FONT,
+    fontScale: (settings?.fontScale as UserSettingsDto['fontScale']) || 'md',
+    imageMode: (settings?.imageMode as UserSettingsDto['imageMode']) || 'on',
+    themeMode: settings?.themeMode || 'light',
+    contentMode: settings?.contentMode || 'standard',
+    newsletterEnabled: settings?.newsletterEnabled || false,
+    askAiEnabled: settings?.askAiEnabled ?? true,
+    protectedModeEnabled: settings?.protectedModeEnabled ?? true
+  };
+}
+
+function buildTags(item: ItemWithRelations): ContentTag[] {
+  const tags = item.tags.map((tag) => ({
+    id: tag.id,
+    label: tag.label,
+    type: tag.type as ContentTag['type'],
+    value: tag.value
+  }));
+
+  if (!tags.some((tag) => tag.type === 'audience')) {
+    tags.push({
+      id: `audience-${item.id}`,
+      label: audienceLabelText(item.audience),
+      type: 'audience',
+      value: item.audience
+    });
+  }
+  if (!tags.some((tag) => tag.type === 'subject' && tag.value === item.subject)) {
+    tags.unshift({
+      id: `subject-${item.id}`,
+      label: item.subject.replace('_', ' '),
+      type: 'subject',
+      value: item.subject
+    });
+  }
+  return tags;
+}
+
+function buildItemDto(item: ItemWithRelations): ContentItem {
+  const tags = buildTags(item);
+  const subjectTags = tags.filter((tag) => tag.type === 'subject').map((tag) => tag.value) as ContentItem['subjects'];
+  const flags = tags.filter((tag) => tag.type === 'flag').map((tag) => tag.value) as ModerationFlag[];
+
+  return {
+    id: item.id,
+    slug: item.slug,
+    kind: item.kind,
+    sourceId: item.sourceId,
+    sourceName: item.source.name,
+    sourceIconUrl: item.source.iconUrl,
+    sourceUrl: item.source.siteUrl,
+    authorUsername: item.author?.username || null,
+    publishedAt: item.publishedAt.toISOString(),
+    originalTitle: item.originalTitle,
+    originalSummary: item.originalSummary,
+    coverImageUrl: item.coverImageUrl,
+    externalUrl: item.externalUrl,
+    youtubeVideoId: item.youtubeVideoId,
+    subject: item.subject,
+    subjects: subjectTags.length ? subjectTags : [item.subject],
+    flags,
+    audience: item.audience,
+    pinned: item.pinned,
+    commentsLocked: item.commentsLocked,
+    hiddenByDefault: item.hiddenByDefault,
+    translations: item.translations.map((translation) => ({
+      language: translation.language,
+      title: translation.title,
+      summary: translation.summary,
+      slug: translation.slug
+    })),
+    tags,
+    bodyMarkdown: item.bodyMarkdown,
+    ai: {
+      summaryProvider: 'openai',
+      summaryModel: DEMO_AI_CONFIG.summaryModel,
+      translationProvider: 'openai',
+      translationModel: DEMO_AI_CONFIG.translationModel
+    }
+  };
+}
+
+function buildCommentDto(comment: CommentWithAuthor): CommentDto {
+  return {
+    id: comment.id,
+    itemId: comment.itemId,
+    authorUsername: comment.author.username,
+    authorDisplayName: comment.author.settings?.displayName || comment.author.username,
+    body: comment.body,
+    createdAt: comment.createdAt.toISOString(),
+    editedAt: comment.editedAt?.toISOString() || null,
+    deletedAt: comment.deletedAt?.toISOString() || null,
+    moderationNote: comment.moderationNote
+  };
+}
+
+function buildAlbumDto(album: AlbumWithRelations): AlbumDto {
+  return {
+    id: album.id,
+    ownerUsername: album.owner.username,
+    title: album.title,
+    description: album.description,
+    coverItemId: album.coverItemId,
+    itemIds: album.items.map((item) => item.itemId),
+    createdAt: album.createdAt.toISOString(),
+    updatedAt: album.updatedAt.toISOString()
+  };
+}
+
+function buildSubmissionDto(submission: SubmissionWithUser): SubmissionDto {
+  return {
+    id: submission.id,
+    type: submission.type as SubmissionDto['type'],
+    title: submission.title,
+    sourceUrl: submission.sourceUrl,
+    body: submission.body,
+    submittedBy: submission.submittedBy.username,
+    status: submission.status,
+    createdAt: submission.createdAt.toISOString()
+  };
+}
+
+function aiConfigToDto(config: Prisma.AiConfigGetPayload<Record<string, never>>): AiModelConfig {
+  return {
+    provider: config.provider as AiModelConfig['provider'],
+    summaryModel: config.summaryModel,
+    translationModel: config.translationModel,
+    askModel: config.askModel,
+    newsletterModel: config.newsletterModel,
+    monthlyBudgetUsd: Number(config.monthlyBudgetUsd),
+    perJobBudgetUsd: Number(config.perJobBudgetUsd),
+    autoDowngrade: config.autoDowngrade,
+    pauseOnBudgetExceeded: config.pauseOnBudgetExceeded
+  };
+}
+
+function aiUsageToDto(usage: Prisma.AiUsageLedgerGetPayload<Record<string, never>>): AiUsageSnapshot {
+  return {
+    provider: usage.provider as AiUsageSnapshot['provider'],
+    model: usage.model,
+    purpose: usage.purpose as AiUsageSnapshot['purpose'],
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalCostUsd: Number(usage.totalCostUsd),
+    createdAt: usage.createdAt.toISOString()
+  };
+}
+
+export class PrismaStore implements AppStore {
+  private readonly modeSwitchTtlMs: number;
+
+  private readonly appUrl: string;
+
+  private readonly modeVerifications = new Map<string, number>();
+
+  constructor(
+    private readonly prisma: PrismaClient,
+    options: { modeSwitchTtlMinutes: number; appUrl: string }
+  ) {
+    this.modeSwitchTtlMs = options.modeSwitchTtlMinutes * 60 * 1000;
+    this.appUrl = options.appUrl.replace(/\/$/, '');
+  }
+
+  async disconnect() {
+    await this.prisma.$disconnect();
+  }
+
+  async listSources() {
+    const sources = await this.prisma.source.findMany({
+      include: {
+        feeds: true
+      },
+      orderBy: {
+        name: 'asc'
+      }
+    });
+    return sources.map(buildSourceDefinition);
+  }
+
+  async getCurrentUser(sessionId?: string | null) {
+    if (!sessionId) return null;
+    const session = await this.prisma.session.findUnique({
+      where: {
+        tokenHash: hashToken(sessionId)
+      },
+      include: {
+        user: {
+          include: {
+            settings: true
+          }
+        }
+      }
+    });
+    if (!session) return null;
+    if (session.expiresAt.getTime() < Date.now()) {
+      await this.prisma.session.delete({
+        where: {
+          id: session.id
+        }
+      }).catch(() => undefined);
+      return null;
+    }
+    return buildUserDto(session.user);
+  }
+
+  async register(input: RegisterInput) {
+    const username = input.username.trim().toLowerCase();
+    const existing = await this.prisma.user.findUnique({
+      where: {
+        username
+      }
+    });
+    if (existing) throw new Error('Username is already taken.');
+
+    const user = await this.prisma.user.create({
+      data: {
+        username,
+        email: `${username}@example.com`,
+        passwordHash: await argon2.hash(input.password),
+        settings: {
+          create: {
+            displayName: input.displayName.trim() || input.username.trim(),
+            language: 'en',
+            contentLanguageMode: 'single',
+            vibePreset: 'museum',
+            fontFamily: DEFAULT_FONT,
+            fontScale: 'md',
+            imageMode: 'on',
+            themeMode: 'light',
+            contentMode: 'standard',
+            newsletterEnabled: false,
+            askAiEnabled: true,
+            protectedModeEnabled: true
+          }
+        }
+      },
+      include: {
+        settings: true
+      }
+    });
+
+    const sessionId = await this.createSession(user.id);
+    return {
+      sessionId,
+      user: buildUserDto(user)
+    };
+  }
+
+  async login(username: string, password: string) {
+    const normalized = username.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({
+      where: {
+        username: normalized
+      },
+      include: {
+        settings: true
+      }
+    });
+    if (!user) throw new Error('Invalid username or password.');
+    if (user.suspendedAt) throw new Error('This account is suspended.');
+    const valid = await argon2.verify(user.passwordHash, password);
+    if (!valid) throw new Error('Invalid username or password.');
+    const sessionId = await this.createSession(user.id);
+    return {
+      sessionId,
+      user: buildUserDto(user)
+    };
+  }
+
+  async logout(sessionId?: string | null) {
+    if (!sessionId) return;
+    await this.prisma.session.deleteMany({
+      where: {
+        tokenHash: hashToken(sessionId)
+      }
+    });
+  }
+
+  async verifyPassword(username: string, password: string) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        username
+      }
+    });
+    if (!user) throw new Error('Account not found.');
+    const valid = await argon2.verify(user.passwordHash, password);
+    if (!valid) throw new Error('Invalid password.');
+    const verifiedUntil = Date.now() + this.modeSwitchTtlMs;
+    this.modeVerifications.set(username, verifiedUntil);
+    return new Date(verifiedUntil).toISOString();
+  }
+
+  async switchContentMode(username: string, nextMode: ContentMode, password?: string | null) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        username
+      },
+      include: {
+        settings: true
+      }
+    });
+    if (!user?.settings) throw new Error('Account not found.');
+    const currentMode = user.settings.contentMode;
+    const movingIntoOrOutOfProtectedMode = currentMode !== 'standard' || nextMode !== 'standard';
+    if (movingIntoOrOutOfProtectedMode) {
+      if (password?.trim()) {
+        await this.verifyPassword(username, password);
+      } else {
+        const verifiedUntil = this.modeVerifications.get(username) || 0;
+        if (verifiedUntil < Date.now()) {
+          throw new Error('Password verification is required before switching this mode.');
+        }
+      }
+    }
+    await this.prisma.$transaction([
+      this.prisma.userSettings.update({
+        where: {
+          userId: user.id
+        },
+        data: {
+          contentMode: nextMode
+        }
+      }),
+      this.prisma.modeSwitchAudit.create({
+        data: {
+          userId: user.id,
+          fromMode: currentMode,
+          toMode: nextMode
+        }
+      })
+    ]);
+
+    return {
+      ok: true,
+      nextMode,
+      verifiedUntil: new Date(Date.now() + this.modeSwitchTtlMs).toISOString()
+    };
+  }
+
+  async forgotPassword(identifier: string) {
+    const normalized = identifier.trim().toLowerCase();
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { username: normalized },
+          { email: normalized }
+        ]
+      }
+    });
+    if (!user) {
+      return { ok: true as const, previewToken: null };
+    }
+    const token = `reset_${randomUUID()}`;
+    await this.prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashToken(token),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000)
+      }
+    });
+    return {
+      ok: true as const,
+      previewToken: token
+    };
+  }
+
+  async resetPassword(token: string, nextPassword: string) {
+    const record = await this.prisma.passwordResetToken.findUnique({
+      where: {
+        tokenHash: hashToken(token)
+      }
+    });
+    if (!record || record.usedAt || record.expiresAt.getTime() < Date.now()) {
+      throw new Error('Reset token is invalid or expired.');
+    }
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: {
+          id: record.userId
+        },
+        data: {
+          passwordHash: await argon2.hash(nextPassword)
+        }
+      }),
+      this.prisma.passwordResetToken.update({
+        where: {
+          id: record.id
+        },
+        data: {
+          usedAt: new Date()
+        }
+      })
+    ]);
+    return { ok: true as const };
+  }
+
+  async getFeed(query: FeedQuery, username?: string | null): Promise<FeedResponse> {
+    const viewer = username
+      ? await this.prisma.user.findUnique({
+          where: { username },
+          include: { settings: true }
+        })
+      : null;
+    const mode = viewer?.settings?.contentMode || 'standard';
+    const hiddenIds = viewer
+      ? (await this.prisma.hiddenItem.findMany({
+          where: { userId: viewer.id },
+          select: { itemId: true }
+        })).map((entry) => entry.itemId)
+      : [];
+    const savedIds = viewer
+      ? (await this.prisma.savedItem.findMany({
+          where: { userId: viewer.id },
+          select: { itemId: true }
+        })).map((entry) => entry.itemId)
+      : [];
+    const itemRecords = await this.prisma.contentItem.findMany({
+      where: {
+        removedAt: null
+      },
+      include: {
+        source: {
+          include: {
+            feeds: true
+          }
+        },
+        author: {
+          include: {
+            settings: true
+          }
+        },
+        translations: true,
+        tags: true
+      },
+      orderBy: {
+        publishedAt: 'desc'
+      }
+    });
+    const allItems = itemRecords.map(buildItemDto);
+    let items =
+      query.feed === 'saved'
+        ? allItems.filter((item) => savedIds.includes(item.id))
+        : filterItemsForFeed(allItems, query.feed, mode, hiddenIds);
+
+    if (query.search?.trim()) {
+      const lower = query.search.trim().toLowerCase();
+      items = items.filter((item) => {
+        const translation = resolveTranslation(item, query.language);
+        return (
+          translation?.title.toLowerCase().includes(lower) ||
+          translation?.summary.toLowerCase().includes(lower) ||
+          item.sourceName.toLowerCase().includes(lower)
+        );
+      });
+    }
+
+    const pinnedIds = (await this.prisma.pinnedSlot.findMany({
+      where: {
+        feed: query.feed
+      },
+      select: {
+        itemId: true
+      }
+    })).map((entry) => entry.itemId);
+
+    const pinnedItems = items.filter((item) => pinnedIds.includes(item.id) || (item.pinned && query.feed !== 'saved'));
+
+    return {
+      items,
+      pinnedItems,
+      savedIds,
+      hiddenIds,
+      mode,
+      feed: query.feed
+    };
+  }
+
+  async getItem(idOrSlug: string, username?: string | null) {
+    const record = await this.findItem(idOrSlug);
+    if (!record) return null;
+    const dto = buildItemDto(record);
+    const viewer = username
+      ? await this.prisma.user.findUnique({
+          where: { username },
+          include: { settings: true }
+        })
+      : null;
+    const mode = viewer?.settings?.contentMode || 'standard';
+    return filterItemsForFeed([dto], 'saved', mode).length ? dto : null;
+  }
+
+  async getProfileItems(username: string) {
+    const items = await this.prisma.contentItem.findMany({
+      where: {
+        author: {
+          username
+        },
+        removedAt: null
+      },
+      include: {
+        source: {
+          include: {
+            feeds: true
+          }
+        },
+        author: {
+          include: {
+            settings: true
+          }
+        },
+        translations: true,
+        tags: true
+      },
+      orderBy: {
+        publishedAt: 'desc'
+      }
+    });
+    return items.map(buildItemDto);
+  }
+
+  async listComments(itemId: string) {
+    const comments = await this.prisma.comment.findMany({
+      where: {
+        itemId,
+        deletedAt: null
+      },
+      include: {
+        author: {
+          include: {
+            settings: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'asc'
+      }
+    });
+    return comments.map(buildCommentDto);
+  }
+
+  async addComment(username: string, itemId: string, body: string) {
+    const [user, item] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { username },
+        include: { settings: true }
+      }),
+      this.prisma.contentItem.findUnique({
+        where: { id: itemId }
+      })
+    ]);
+    if (!user?.settings) throw new Error('Account not found.');
+    if (!item || item.removedAt) throw new Error('Item not found.');
+    if (item.commentsLocked) throw new Error('Comments are locked for this item.');
+    const comment = await this.prisma.comment.create({
+      data: {
+        itemId,
+        authorId: user.id,
+        body
+      },
+      include: {
+        author: {
+          include: {
+            settings: true
+          }
+        }
+      }
+    });
+    return buildCommentDto(comment);
+  }
+
+  async hideItem(username: string, itemId: string) {
+    const user = await this.requireUser(username);
+    await this.prisma.hiddenItem.upsert({
+      where: {
+        userId_itemId: {
+          userId: user.id,
+          itemId
+        }
+      },
+      update: {},
+      create: {
+        userId: user.id,
+        itemId
+      }
+    });
+    const hiddenIds = (await this.prisma.hiddenItem.findMany({
+      where: { userId: user.id },
+      select: { itemId: true }
+    })).map((entry) => entry.itemId);
+    return { ok: true as const, hiddenIds };
+  }
+
+  async saveItem(username: string, itemId: string) {
+    const user = await this.requireUser(username);
+    await this.prisma.savedItem.upsert({
+      where: {
+        userId_itemId: {
+          userId: user.id,
+          itemId
+        }
+      },
+      update: {},
+      create: {
+        userId: user.id,
+        itemId
+      }
+    });
+    const savedIds = (await this.prisma.savedItem.findMany({
+      where: { userId: user.id },
+      select: { itemId: true }
+    })).map((entry) => entry.itemId);
+    return { ok: true as const, savedIds };
+  }
+
+  async unsaveItem(username: string, itemId: string) {
+    const user = await this.requireUser(username);
+    await this.prisma.savedItem.deleteMany({
+      where: {
+        userId: user.id,
+        itemId
+      }
+    });
+    const savedIds = (await this.prisma.savedItem.findMany({
+      where: { userId: user.id },
+      select: { itemId: true }
+    })).map((entry) => entry.itemId);
+    return { ok: true as const, savedIds };
+  }
+
+  async getAlbums(username: string) {
+    const albums = await this.prisma.album.findMany({
+      where: {
+        owner: {
+          username
+        }
+      },
+      include: {
+        owner: true,
+        items: {
+          orderBy: {
+            position: 'asc'
+          }
+        }
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      }
+    });
+    return albums.map(buildAlbumDto);
+  }
+
+  async createAlbum(username: string, title: string, description: string) {
+    const user = await this.requireUser(username);
+    const album = await this.prisma.album.create({
+      data: {
+        ownerId: user.id,
+        title,
+        description
+      },
+      include: {
+        owner: true,
+        items: {
+          orderBy: {
+            position: 'asc'
+          }
+        }
+      }
+    });
+    return buildAlbumDto(album);
+  }
+
+  async addAlbumItem(username: string, albumId: string, itemId: string) {
+    const user = await this.requireUser(username);
+    const album = await this.prisma.album.findFirst({
+      where: {
+        id: albumId,
+        ownerId: user.id
+      },
+      include: {
+        owner: true,
+        items: {
+          orderBy: {
+            position: 'asc'
+          }
+        }
+      }
+    });
+    if (!album) throw new Error('Album not found.');
+    const nextPosition = album.items.length;
+    await this.prisma.albumItem.upsert({
+      where: {
+        albumId_itemId: {
+          albumId,
+          itemId
+        }
+      },
+      update: {},
+      create: {
+        albumId,
+        itemId,
+        position: nextPosition
+      }
+    });
+    const updated = await this.prisma.album.update({
+      where: {
+        id: albumId
+      },
+      data: {
+        coverItemId: album.coverItemId || itemId
+      },
+      include: {
+        owner: true,
+        items: {
+          orderBy: {
+            position: 'asc'
+          }
+        }
+      }
+    });
+    return buildAlbumDto(updated);
+  }
+
+  async createSubmission(username: string, input: { type: 'link' | 'community_post'; title: string; sourceUrl?: string | null; body?: string | null }) {
+    const user = await this.requireUser(username);
+    const submission = await this.prisma.submission.create({
+      data: {
+        type: input.type,
+        title: input.title,
+        sourceUrl: input.sourceUrl || null,
+        body: input.body || null,
+        submittedById: user.id
+      },
+      include: {
+        submittedBy: true
+      }
+    });
+    return buildSubmissionDto(submission);
+  }
+
+  async askAi(itemId: string, question: string, language: InterfaceLanguage) {
+    const item = await this.getItem(itemId);
+    if (!item) throw new Error('Item not found.');
+    const translation = resolveTranslation(item, language);
+    const answer =
+      language === 'bg'
+        ? `За "${translation?.title}" бих започнал с произхода на източника, ключовия аргумент и какви допълнителни първични или музейни материали можеш да потърсиш. Въпросът ти беше: ${question}`
+        : `For "${translation?.title}", start with the source context, the central claim, and which museum, archive, or primary materials could deepen the story. Your question was: ${question}`;
+    return {
+      answer,
+      citations: [item.externalUrl || `${this.appUrl}/item/${item.slug}`]
+    };
+  }
+
+  async shareItem(itemId: string) {
+    const item = await this.prisma.contentItem.findFirst({
+      where: {
+        OR: [
+          { id: itemId },
+          { slug: itemId }
+        ]
+      },
+      select: {
+        slug: true
+      }
+    });
+    if (!item) throw new Error('Item not found.');
+    return {
+      ok: true as const,
+      shareUrl: `${this.appUrl}/item/${item.slug}`
+    };
+  }
+
+  async getAdminSnapshot(): Promise<AdminSnapshot> {
+    const [sources, submissions, users, errorLogs, aiConfig, aiUsage] = await Promise.all([
+      this.listSources(),
+      this.prisma.submission.findMany({
+        include: {
+          submittedBy: true
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      }),
+      this.prisma.user.findMany({
+        include: {
+          settings: true
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      }),
+      this.prisma.systemErrorEvent.findMany({
+        orderBy: {
+          createdAt: 'desc'
+        }
+      }),
+      this.prisma.aiConfig.findUnique({
+        where: {
+          id: 1
+        }
+      }),
+      this.prisma.aiUsageLedger.findMany({
+        orderBy: {
+          createdAt: 'desc'
+        },
+        take: 20
+      })
+    ]);
+
+    return {
+      sources,
+      submissions: submissions.map(buildSubmissionDto),
+      users: users.map(buildUserDto),
+      errorLogs: errorLogs.map((log) => ({
+        id: log.id,
+        scope: log.scope,
+        message: log.message,
+        level: log.level,
+        createdAt: log.createdAt.toISOString(),
+        resolvedAt: log.resolvedAt?.toISOString() || null
+      })),
+      aiConfig: aiConfig ? aiConfigToDto(aiConfig) : DEMO_AI_CONFIG,
+      aiUsage: aiUsage.map(aiUsageToDto)
+    };
+  }
+
+  async addSource(source: Omit<SourceDefinition, 'id'>) {
+    const created = await this.prisma.source.create({
+      data: {
+        id: `src-${randomUUID()}`,
+        name: source.name,
+        slug: source.slug,
+        iconUrl: source.iconUrl,
+        siteUrl: source.siteUrl,
+        description: source.description,
+        language: source.language,
+        defaultAudience: source.defaultAudience,
+        sourceType: source.sourceType,
+        status: source.status,
+        feeds: {
+          create: {
+            kind: source.kind,
+            feedUrl: source.feedUrl
+          }
+        }
+      },
+      include: {
+        feeds: true
+      }
+    });
+    return buildSourceDefinition(created);
+  }
+
+  async patchItem(
+    itemId: string,
+    patch: Partial<Pick<ContentItem, 'audience' | 'commentsLocked' | 'flags' | 'hiddenByDefault' | 'pinned'>>
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.contentItem.update({
+        where: { id: itemId },
+        data: {
+          audience: patch.audience,
+          commentsLocked: patch.commentsLocked,
+          hiddenByDefault: patch.hiddenByDefault,
+          pinned: patch.pinned
+        }
+      });
+
+      if (patch.flags) {
+        await tx.contentTag.deleteMany({
+          where: {
+            itemId,
+            type: 'flag'
+          }
+        });
+        if (patch.flags.length) {
+          await tx.contentTag.createMany({
+            data: patch.flags.map((flag) => ({
+              itemId,
+              label: moderationLabel(flag),
+              type: 'flag',
+              value: flag
+            }))
+          });
+        }
+      }
+
+      if (patch.audience) {
+        await tx.contentTag.deleteMany({
+          where: {
+            itemId,
+            type: 'audience'
+          }
+        });
+        await tx.contentTag.create({
+          data: {
+            itemId,
+            label: audienceLabelText(patch.audience),
+            type: 'audience',
+            value: patch.audience
+          }
+        });
+      }
+    });
+
+    const updated = await this.findItem(itemId);
+    if (!updated) throw new Error('Item not found.');
+    return buildItemDto(updated);
+  }
+
+  async pinItem(itemId: string, slot: number) {
+    const item = await this.prisma.contentItem.findUnique({
+      where: { id: itemId }
+    });
+    if (!item) throw new Error('Item not found.');
+    const feed = subjectToFeed(item.subject);
+    await this.prisma.$transaction([
+      this.prisma.contentItem.update({
+        where: { id: itemId },
+        data: { pinned: true }
+      }),
+      this.prisma.pinnedSlot.upsert({
+        where: {
+          feed_slot: {
+            feed,
+            slot
+          }
+        },
+        update: {
+          itemId
+        },
+        create: {
+          feed,
+          slot,
+          itemId
+        }
+      })
+    ]);
+
+    const updated = await this.findItem(itemId);
+    if (!updated) throw new Error('Item not found.');
+    return buildItemDto(updated);
+  }
+
+  async lockComments(itemId: string, locked: boolean) {
+    return this.patchItem(itemId, { commentsLocked: locked });
+  }
+
+  async suspendUser(username: string, suspended: boolean) {
+    const user = await this.requireUser(username);
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: {
+          id: user.id
+        },
+        data: {
+          suspendedAt: suspended ? new Date() : null
+        }
+      }),
+      this.prisma.userSettings.updateMany({
+        where: {
+          userId: user.id
+        },
+        data: {
+          protectedModeEnabled: !suspended
+        }
+      }),
+      ...(suspended
+        ? [
+            this.prisma.systemErrorEvent.create({
+              data: {
+                scope: 'api',
+                level: 'warn',
+                message: `User ${username} was suspended by admin action.`
+              }
+            })
+          ]
+        : [])
+    ]);
+
+    const updated = await this.prisma.user.findUnique({
+      where: {
+        id: user.id
+      },
+      include: {
+        settings: true
+      }
+    });
+    if (!updated) throw new Error('Account not found.');
+    return buildUserDto(updated);
+  }
+
+  async updateAiConfig(patch: Partial<AiModelConfig>) {
+    const current = await this.prisma.aiConfig.findUnique({
+      where: { id: 1 }
+    });
+    const baseline = current ? aiConfigToDto(current) : DEMO_AI_CONFIG;
+    const next = {
+      ...baseline,
+      ...patch
+    };
+    const stored = await this.prisma.aiConfig.upsert({
+      where: {
+        id: 1
+      },
+      create: {
+        id: 1,
+        provider: next.provider,
+        summaryModel: next.summaryModel,
+        translationModel: next.translationModel,
+        askModel: next.askModel,
+        newsletterModel: next.newsletterModel,
+        monthlyBudgetUsd: next.monthlyBudgetUsd,
+        perJobBudgetUsd: next.perJobBudgetUsd,
+        autoDowngrade: next.autoDowngrade,
+        pauseOnBudgetExceeded: next.pauseOnBudgetExceeded
+      },
+      update: {
+        provider: next.provider,
+        summaryModel: next.summaryModel,
+        translationModel: next.translationModel,
+        askModel: next.askModel,
+        newsletterModel: next.newsletterModel,
+        monthlyBudgetUsd: next.monthlyBudgetUsd,
+        perJobBudgetUsd: next.perJobBudgetUsd,
+        autoDowngrade: next.autoDowngrade,
+        pauseOnBudgetExceeded: next.pauseOnBudgetExceeded
+      }
+    });
+    return aiConfigToDto(stored);
+  }
+
+  async updateUserSettings(username: string, patch: Partial<UserSettingsDto>) {
+    const user = await this.requireUser(username);
+    const allowed = {
+      displayName: patch.displayName,
+      language: patch.language,
+      contentLanguageMode: patch.contentLanguageMode,
+      vibePreset: patch.vibePreset,
+      fontFamily: patch.fontFamily,
+      fontScale: patch.fontScale,
+      imageMode: patch.imageMode,
+      themeMode: patch.themeMode,
+      contentMode: patch.contentMode,
+      newsletterEnabled: patch.newsletterEnabled,
+      askAiEnabled: patch.askAiEnabled,
+      protectedModeEnabled: patch.protectedModeEnabled
+    };
+    await this.prisma.userSettings.upsert({
+      where: {
+        userId: user.id
+      },
+      create: {
+        userId: user.id,
+        displayName: allowed.displayName || username,
+        language: allowed.language || 'en',
+        contentLanguageMode: allowed.contentLanguageMode || 'single',
+        vibePreset: allowed.vibePreset || 'museum',
+        fontFamily: allowed.fontFamily || DEFAULT_FONT,
+        fontScale: allowed.fontScale || 'md',
+        imageMode: allowed.imageMode || 'on',
+        themeMode: allowed.themeMode || 'light',
+        contentMode: allowed.contentMode || 'standard',
+        newsletterEnabled: allowed.newsletterEnabled || false,
+        askAiEnabled: allowed.askAiEnabled ?? true,
+        protectedModeEnabled: allowed.protectedModeEnabled ?? true
+      },
+      update: allowed
+    });
+    const updated = await this.prisma.user.findUnique({
+      where: {
+        id: user.id
+      },
+      include: {
+        settings: true
+      }
+    });
+    if (!updated) throw new Error('Account not found.');
+    return buildUserDto(updated);
+  }
+
+  private async createSession(userId: string) {
+    const token = `sess_${randomUUID()}`;
+    await this.prisma.session.create({
+      data: {
+        userId,
+        tokenHash: hashToken(token),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      }
+    });
+    return token;
+  }
+
+  private async requireUser(username: string) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        username
+      },
+      include: {
+        settings: true
+      }
+    });
+    if (!user) throw new Error('Account not found.');
+    return user;
+  }
+
+  private async findItem(idOrSlug: string) {
+    return this.prisma.contentItem.findFirst({
+      where: {
+        OR: [
+          { id: idOrSlug },
+          { slug: idOrSlug }
+        ],
+        removedAt: null
+      },
+      include: {
+        source: {
+          include: {
+            feeds: true
+          }
+        },
+        author: {
+          include: {
+            settings: true
+          }
+        },
+        translations: true,
+        tags: true
+      }
+    });
+  }
+}

@@ -2,9 +2,9 @@ import type { FastifyInstance } from 'fastify';
 
 import { feedQuerySchema } from '@edu-feed/shared';
 
-import { DemoStore } from '../lib/demo-store';
+import type { AppStore } from '../lib/store';
 
-export async function registerFeedRoutes(app: FastifyInstance, options: { store: DemoStore }) {
+export async function registerFeedRoutes(app: FastifyInstance, options: { store: AppStore }) {
   app.get('/v1/feed', async (request) => {
     const parsed = feedQuerySchema.parse(request.query || {});
     return options.store.getFeed(parsed, request.currentUser?.username);
@@ -12,7 +12,7 @@ export async function registerFeedRoutes(app: FastifyInstance, options: { store:
 
   app.get('/v1/feed/stream', async (request, reply) => {
     const parsed = feedQuerySchema.parse(request.query || {});
-    const snapshot = options.store.getFeed(parsed, request.currentUser?.username);
+    const snapshot = await options.store.getFeed(parsed, request.currentUser?.username);
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       Connection: 'keep-alive',
@@ -28,7 +28,7 @@ export async function registerFeedRoutes(app: FastifyInstance, options: { store:
 
   app.get('/v1/sources', async () => {
     return {
-      sources: options.store.listSources()
+      sources: await options.store.listSources()
     };
   });
 }
