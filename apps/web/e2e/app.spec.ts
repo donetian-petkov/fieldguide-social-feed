@@ -36,6 +36,8 @@ test('feed ask-ai flow returns an article-scoped answer', async ({ page }) => {
   await loginAs(page, 'alex');
   await page.goto('/item/the-bell-rhythms-of-kukeri-season');
 
+  await expect(page.getByRole('heading', { name: 'AI audit' })).toHaveCount(0);
+
   const askAiSection = page.getByRole('heading', { name: 'Ask AI' }).locator('..').locator('..');
   await askAiSection.locator('[data-ask-ai-input]').fill('What should I research next?');
   await askAiSection.getByRole('button', { name: 'Ask' }).click();
