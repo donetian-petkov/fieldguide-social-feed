@@ -7,9 +7,11 @@ import type {
   ContentMode,
   ErrorLogDto,
   FeedQuery,
+  GeneratedStoryDraftDto,
   InterfaceLanguage,
   ModeSwitchResult,
   SourceDefinition,
+  SubjectTag,
   SubjectFeed,
   SubmissionDto,
   UserRole,
@@ -40,6 +42,7 @@ export type AdminSnapshot = {
   errorLogs: ErrorLogDto[];
   aiConfig: AiModelConfig;
   aiUsage: AiUsageSnapshot[];
+  generatedStories: GeneratedStoryDraftDto[];
 };
 
 export type ShareResult = {
@@ -51,6 +54,13 @@ export type AskAiResult = {
   answer: string;
   citations: string[];
 };
+
+export type GeneratedStoryRequestInput = {
+  subject: SubjectTag;
+  prompt: string;
+};
+
+export type GeneratedStoryReviewDecision = 'approved' | 'rejected';
 
 export type AlbumDetail = {
   album: AlbumDto;
@@ -95,6 +105,13 @@ export interface AppStore {
   askAi(itemId: string, question: string, language: InterfaceLanguage, username?: string | null): StoreResult<AskAiResult>;
   shareItem(itemId: string): StoreResult<ShareResult>;
   getAdminSnapshot(): StoreResult<AdminSnapshot>;
+  listGeneratedStoryDrafts(): StoreResult<GeneratedStoryDraftDto[]>;
+  requestGeneratedStory(username: string, input: GeneratedStoryRequestInput): StoreResult<GeneratedStoryDraftDto>;
+  reviewGeneratedStory(
+    username: string,
+    draftId: string,
+    decision: GeneratedStoryReviewDecision
+  ): StoreResult<{ draft: GeneratedStoryDraftDto; item: ContentItem | null }>;
   addSource(source: Omit<SourceDefinition, 'id'>): StoreResult<SourceDefinition>;
   updateSource(sourceId: string, patch: Partial<Omit<SourceDefinition, 'id'>>): StoreResult<SourceDefinition>;
   deleteSource(sourceId: string): StoreResult<{ ok: boolean }>;

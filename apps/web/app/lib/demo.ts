@@ -128,6 +128,7 @@ export function getAdminModel() {
     errorLogs: DEMO_ERROR_LOGS,
     aiConfig: DEMO_AI_CONFIG,
     aiUsage: DEMO_AI_USAGE,
+    generatedStories: [],
     users: DEMO_USERS
   };
 }

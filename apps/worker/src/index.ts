@@ -6,6 +6,7 @@ import { getWorkerConfig } from './config.js';
 import {
   bootstrapRecurringJobs,
   processAiEnrichmentJob,
+  processGeneratedStoryJob,
   processIngestionJob,
   processNewsletterJob,
   shutdownProcessorServices
@@ -35,7 +36,8 @@ async function main() {
   const queues = {
     ingestion: new Queue(QUEUES.ingestion, { connection }),
     aiEnrichment: new Queue(QUEUES.aiEnrichment, { connection }),
-    newsletter: new Queue(QUEUES.newsletter, { connection })
+    newsletter: new Queue(QUEUES.newsletter, { connection }),
+    generatedStory: new Queue(QUEUES.generatedStory, { connection })
   };
 
   const workers = [
@@ -48,6 +50,10 @@ async function main() {
       concurrency: config.WORKER_CONCURRENCY
     }),
     new Worker(QUEUES.newsletter, async (job) => processNewsletterJob(job.data), {
+      connection,
+      concurrency: 1
+    }),
+    new Worker(QUEUES.generatedStory, async (job) => processGeneratedStoryJob(job.data), {
       connection,
       concurrency: 1
     })

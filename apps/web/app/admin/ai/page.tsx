@@ -5,6 +5,7 @@ import {
   Alert,
   Box,
   Button,
+  Divider,
   FormControlLabel,
   MenuItem,
   Snackbar,
@@ -14,22 +15,50 @@ import {
   Typography
 } from '@mui/material';
 
-import type { AiModelConfig } from '@edu-feed/shared';
+import type { AiModelConfig, GeneratedStoryDraftDto, SubjectTag } from '@edu-feed/shared';
 
 import { AppShell } from '../../components/AppShell';
 import { SectionCard } from '../../components/SectionCard';
 import { getAdminModel } from '../../lib/demo';
-import { useAdminDashboardQuery, useUpdateAiConfigMutation } from '../../lib/api';
+import {
+  useAdminDashboardQuery,
+  useRequestGeneratedStoryMutation,
+  useReviewGeneratedStoryMutation,
+  useUpdateAiConfigMutation
+} from '../../lib/api';
 import { useSessionViewer } from '../../lib/session';
+
+const SUBJECT_OPTIONS: Array<{ value: SubjectTag; label: string }> = [
+  { value: 'history', label: 'History' },
+  { value: 'art', label: 'Art' },
+  { value: 'books', label: 'Books' },
+  { value: 'movies', label: 'Movies' },
+  { value: 'country_knowledge', label: 'Country Knowledge' },
+  { value: 'photography', label: 'Photography' },
+  { value: 'nature', label: 'Nature' },
+  { value: 'video', label: 'Videos' }
+];
+
+function draftStatusCopy(draft: GeneratedStoryDraftDto) {
+  if (draft.status === 'queued') return 'Queued for worker generation';
+  if (draft.status === 'draft') return `Verifier passed at ${(draft.verification?.score || 0).toFixed(2)}`;
+  if (draft.status === 'approved') return `Approved${draft.itemId ? ` into ${draft.itemId}` : ''}`;
+  if (draft.status === 'failed') return draft.failureReason || 'Generation failed';
+  return 'Rejected by admin';
+}
 
 export default function AdminAiPage() {
   const fallback = getAdminModel();
   const { viewer } = useSessionViewer(fallback.viewer);
   const adminQuery = useAdminDashboardQuery();
   const [updateAiConfig, updateState] = useUpdateAiConfigMutation();
+  const [requestGeneratedStory, requestState] = useRequestGeneratedStoryMutation();
+  const [reviewGeneratedStory, reviewState] = useReviewGeneratedStoryMutation();
   const model = adminQuery.data || fallback;
   const [toast, setToast] = useState<string | null>(null);
   const [form, setForm] = useState<AiModelConfig>(model.aiConfig);
+  const [storySubject, setStorySubject] = useState<SubjectTag>('history');
+  const [storyPrompt, setStoryPrompt] = useState('');
 
   useEffect(() => {
     setForm(model.aiConfig);
@@ -48,6 +77,28 @@ export default function AdminAiPage() {
       setToast('AI configuration saved.');
     } catch {
       setToast('Could not save AI configuration.');
+    }
+  }
+
+  async function handleGenerateStory() {
+    try {
+      await requestGeneratedStory({
+        subject: storySubject,
+        prompt: storyPrompt
+      }).unwrap();
+      setStoryPrompt('');
+      setToast('Generated story draft queued.');
+    } catch {
+      setToast('Could not queue generated story draft.');
+    }
+  }
+
+  async function handleReviewDraft(draftId: string, decision: 'approved' | 'rejected') {
+    try {
+      await reviewGeneratedStory({ draftId, decision }).unwrap();
+      setToast(decision === 'approved' ? 'Generated story approved.' : 'Generated story rejected.');
+    } catch {
+      setToast('Could not review generated story.');
     }
   }
 
@@ -142,6 +193,115 @@ export default function AdminAiPage() {
                   {usage.purpose}: {usage.provider} / {usage.model} • ${usage.totalCostUsd}
                 </Typography>
               ))}
+            </Stack>
+          </SectionCard>
+        </Box>
+        <Box sx={{ gridColumn: { xs: 'auto', md: '1 / -1' } }}>
+          <SectionCard title="Manual generated stories" eyebrow="Admin approval only">
+            <Stack spacing={2.5}>
+              <Alert severity="info">
+                Phase 1 creates verifier-scored drafts only. Nothing enters the feed until an admin approves it here.
+              </Alert>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gap: 2,
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    md: '220px 1fr auto'
+                  },
+                  alignItems: 'start'
+                }}
+              >
+                <TextField
+                  select
+                  label="Subject"
+                  value={storySubject}
+                  onChange={(event) => setStorySubject(event.target.value as SubjectTag)}
+                >
+                  {SUBJECT_OPTIONS.map((subject) => (
+                    <MenuItem key={subject.value} value={subject.value}>
+                      {subject.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <TextField
+                  label="Draft request"
+                  placeholder="Example: Build a short educational story about why Roman road networks still matter."
+                  value={storyPrompt}
+                  onChange={(event) => setStoryPrompt(event.target.value)}
+                  multiline
+                  minRows={2}
+                />
+                <Button
+                  variant="contained"
+                  onClick={() => void handleGenerateStory()}
+                  disabled={requestState.isLoading || storyPrompt.trim().length < 12}
+                  sx={{ minWidth: 160 }}
+                >
+                  {requestState.isLoading ? 'Queueing...' : 'Generate Draft'}
+                </Button>
+              </Box>
+              <Divider />
+              <Stack spacing={2}>
+                {(model.generatedStories || []).length ? (
+                  model.generatedStories.map((draft) => (
+                    <Box
+                      key={draft.id}
+                      sx={{
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        borderRadius: 3,
+                        p: 2
+                      }}
+                    >
+                      <Stack spacing={1}>
+                        <Typography variant="overline">
+                          {draft.subject.replace('_', ' ')} • {draft.status} • ${draft.totalCostUsd.toFixed(4)}
+                        </Typography>
+                        <Typography variant="h6">{draft.title || draft.prompt}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {draftStatusCopy(draft)}
+                        </Typography>
+                        {draft.summary ? <Typography variant="body2">{draft.summary}</Typography> : null}
+                        {draft.citations.length ? (
+                          <Typography variant="caption" color="text.secondary">
+                            Citations: {draft.citations.map((citation) => citation.sourceName).join(', ')}
+                          </Typography>
+                        ) : null}
+                        {draft.verification?.unsupportedClaims.length ? (
+                          <Alert severity="warning">
+                            Unsupported claims: {draft.verification.unsupportedClaims.join('; ')}
+                          </Alert>
+                        ) : null}
+                        <Stack direction="row" spacing={1} flexWrap="wrap">
+                          <Button
+                            size="small"
+                            variant="contained"
+                            onClick={() => void handleReviewDraft(draft.id, 'approved')}
+                            disabled={draft.status !== 'draft' || reviewState.isLoading}
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="error"
+                            onClick={() => void handleReviewDraft(draft.id, 'rejected')}
+                            disabled={!['queued', 'draft', 'failed'].includes(draft.status) || reviewState.isLoading}
+                          >
+                            Reject
+                          </Button>
+                        </Stack>
+                      </Stack>
+                    </Box>
+                  ))
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No generated story drafts yet.
+                  </Typography>
+                )}
+              </Stack>
             </Stack>
           </SectionCard>
         </Box>

@@ -22,6 +22,8 @@ class TrackingQueues implements AppQueues {
 
   public syncedNewsletters: Array<{ username: string; enabled: boolean; mode?: 'weekly' | 'daily' }> = [];
 
+  public generatedDrafts: string[] = [];
+
   async scheduleSource(sourceId: string, feedUrl: string, pollIntervalSec?: number) {
     this.scheduledSources.push({ sourceId, feedUrl, pollIntervalSec });
   }
@@ -29,6 +31,10 @@ class TrackingQueues implements AppQueues {
   async runSourceResync() {}
 
   async removeSourceSchedule() {}
+
+  async generateStoryDraft(draftId: string) {
+    this.generatedDrafts.push(draftId);
+  }
 
   async scheduleNewsletter() {}
 
@@ -255,6 +261,87 @@ test('admin routes reject non-admin users and schedule new sources for ingestion
     assert.equal(response.statusCode, 200);
     assert.equal(queues.scheduledSources.length, 1);
     assert.equal(queues.scheduledSources[0]?.feedUrl, 'https://www.youtube.com/feeds/videos.xml?channel_id=UCtestchannel1234567890');
+  } finally {
+    await app.close();
+  }
+});
+
+test('admin generated story drafts require admin access and approval before publishing', async () => {
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    const userCookie = await login(app, 'alex', 'fieldguide123');
+    const forbidden = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/generated-stories',
+      headers: {
+        cookie: userCookie
+      },
+      payload: {
+        subject: 'history',
+        prompt: 'Create a source-cited primer on early medieval trade routes.'
+      }
+    });
+    assert.equal(forbidden.statusCode, 403);
+
+    const adminCookie = await login(app, 'admin', 'fieldguide123');
+    const requestResponse = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/generated-stories',
+      headers: {
+        cookie: adminCookie
+      },
+      payload: {
+        subject: 'history',
+        prompt: 'Create a source-cited primer on early medieval trade routes.'
+      }
+    });
+
+    assert.equal(requestResponse.statusCode, 200);
+    const draft = requestResponse.json().draft as { id: string; status: string; citations: unknown[] };
+    assert.equal(draft.status, 'draft');
+    assert.ok(draft.citations.length > 0);
+    assert.deepEqual(queues.generatedDrafts, [draft.id]);
+
+    const beforeFeedResponse = await app.inject({
+      method: 'GET',
+      url: '/v1/feed?feed=history'
+    });
+    assert.equal(beforeFeedResponse.statusCode, 200);
+    assert.equal(
+      beforeFeedResponse
+        .json()
+        .items.some((item: { kind: string }) => item.kind === 'generated_story'),
+      false
+    );
+
+    const approveResponse = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/generated-stories/${draft.id}/review`,
+      headers: {
+        cookie: adminCookie
+      },
+      payload: {
+        decision: 'approved'
+      }
+    });
+
+    assert.equal(approveResponse.statusCode, 200);
+    assert.equal(approveResponse.json().draft.status, 'approved');
+    assert.equal(approveResponse.json().item.kind, 'generated_story');
+
+    const afterFeedResponse = await app.inject({
+      method: 'GET',
+      url: '/v1/feed?feed=history'
+    });
+    assert.equal(afterFeedResponse.statusCode, 200);
+    assert.equal(
+      afterFeedResponse
+        .json()
+        .items.some((item: { id: string }) => item.id === approveResponse.json().item.id),
+      true
+    );
   } finally {
     await app.close();
   }

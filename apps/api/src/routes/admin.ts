@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { aiModelConfigSchema, sourceDefinitionSchema, userRoleSchema } from '@edu-feed/shared';
+import { aiModelConfigSchema, sourceDefinitionSchema, subjectTagSchema, userRoleSchema } from '@edu-feed/shared';
 
 import type { AppQueues } from '../lib/queues.js';
 import type { AppStore } from '../lib/store.js';
@@ -40,6 +40,15 @@ const deleteCommentSchema = z.object({
 
 const removeItemSchema = z.object({
   removed: z.boolean().default(true)
+});
+
+const generatedStoryRequestSchema = z.object({
+  subject: subjectTagSchema.exclude(['community']),
+  prompt: z.string().trim().min(12).max(1200)
+});
+
+const generatedStoryReviewSchema = z.object({
+  decision: z.enum(['approved', 'rejected'])
 });
 
 export async function registerAdminRoutes(app: FastifyInstance, options: { store: AppStore; queues: AppQueues }) {
@@ -170,5 +179,32 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
     return {
       config: await options.store.updateAiConfig(parsed)
     };
+  });
+
+  app.get('/v1/admin/generated-stories', async () => {
+    return {
+      drafts: await options.store.listGeneratedStoryDrafts()
+    };
+  });
+
+  app.post('/v1/admin/generated-stories', async (request) => {
+    const parsed = generatedStoryRequestSchema.parse(request.body || {});
+    const currentUser = request.currentUser;
+    if (!currentUser) throw new Error('Admin access is required.');
+    const draft = await options.store.requestGeneratedStory(currentUser.username, parsed);
+    await options.queues.generateStoryDraft(draft.id).catch((error) => {
+      app.log.warn({ error, draftId: draft.id }, 'Failed to enqueue generated story draft');
+    });
+    return {
+      draft
+    };
+  });
+
+  app.post('/v1/admin/generated-stories/:id/review', async (request) => {
+    const params = request.params as { id: string };
+    const parsed = generatedStoryReviewSchema.parse(request.body || {});
+    const currentUser = request.currentUser;
+    if (!currentUser) throw new Error('Admin access is required.');
+    return options.store.reviewGeneratedStory(currentUser.username, params.id, parsed.decision);
   });
 }

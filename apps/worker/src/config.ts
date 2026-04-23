@@ -20,7 +20,8 @@ const workerEnvSchema = z.object({
   DEMO_MODE: z
     .string()
     .optional()
-    .transform((value) => value !== 'false'),
+    .default('false')
+    .transform((value) => value === 'true'),
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
   OPENAI_API_KEY: z.string().optional().default(''),
   ANTHROPIC_API_KEY: z.string().optional().default(''),

@@ -18,7 +18,7 @@ Fieldguide is a full-stack educational social feed for history, art, books, movi
 
 - `apps/web`: Next.js App Router, React, MUI, Redux Toolkit + RTK Query, i18next.
 - `apps/api`: Fastify, secure cookie sessions, Prisma/MySQL persistence, Pino logs.
-- `apps/worker`: BullMQ worker for ingestion, AI enrichment, newsletter selection, and email jobs.
+- `apps/worker`: BullMQ worker for ingestion, AI enrichment, manual generated-story drafts, newsletter selection, and email jobs.
 - `packages/shared`: Zod schemas, DTOs, source registry, demo fixtures, and shared AI utilities.
 
 ## Implemented Scope
@@ -29,6 +29,7 @@ Fieldguide is a full-stack educational social feed for history, art, books, movi
 - Flat comments with author edit windows, admin deletion, and per-item locking.
 - RSS, YouTube RSS, and adapter-backed ingestion with dedupe, metadata extraction, AI summary/translation/classification, and worker scheduling.
 - Ask-AI per item with content-mode enforcement and provider/model/budget controls.
+- Admin-only manual AI story generation that creates cited, verifier-scored drafts under a hard monthly cap; drafts require explicit admin approval before publishing.
 - Opt-in newsletters with weekly/daily cadence, viewed/saved/hidden preference ranking, AI-assisted item selection, and audit metadata.
 - Admin source CRUD/resync/delete, submission review, item pinning/removal/tagging, user role/suspend controls, AI settings, budget status, and error logs.
 
@@ -75,6 +76,8 @@ npm run dev
 
 Prisma workspace scripts load the repo-root `.env`, so you do not need to duplicate `DATABASE_URL` inside `apps/api/.env`. The Docker MySQL init script creates both `fieldguide` and `fieldguide_shadow`; Prisma uses the shadow database during `migrate dev`.
 
+The default database seed creates accounts, source registry entries, and AI config only. It does not insert demo articles. To intentionally load bundled demo stories into MySQL for UI testing, run `SEED_DEMO_CONTENT=true npm run seed`.
+
 If you already had a Docker volume from before the shadow database was added, create/grant it once:
 
 ```bash
@@ -103,7 +106,7 @@ When the API and web app are already running, use the web workspace command dire
 npm run test:e2e -w @edu-feed/web
 ```
 
-Current automated coverage includes shared schema/source tests, API route tests, worker newsletter-ranking tests, web theme tests, and Playwright flows for auth, password reset, feeds, Ask-AI, settings, albums, saved/hidden state, sharing, admin AI, user management, source CRUD, pinning, moderation, community approval, and comment locking.
+Current automated coverage includes shared schema/source tests, API route tests for admin-only generated-story draft approval, worker newsletter-ranking tests, web theme tests, and Playwright flows for auth, password reset, feeds, Ask-AI, settings, albums, saved/hidden state, sharing, admin AI, user management, source CRUD, pinning, moderation, community approval, and comment locking.
 
 ## Screenshots
 
@@ -120,7 +123,7 @@ The capture script starts the built API and web app in demo mode, logs in as see
 
 - App: `/`, `/feed/[subject]`, `/item/[slug]`, `/saved`, `/albums/[id]`, `/community`, `/profile/[username]`, `/settings`.
 - Admin: `/admin`, `/admin/sources`, `/admin/moderation`, `/admin/users`, `/admin/ai`, `/admin/logs`.
-- API: `/v1/auth/*`, `/v1/me`, `/v1/feed`, `/v1/items/:id`, `/v1/albums`, `/v1/submissions`, `/v1/admin/*`.
+- API: `/v1/auth/*`, `/v1/me`, `/v1/feed`, `/v1/items/:id`, `/v1/albums`, `/v1/submissions`, `/v1/admin/*`, `/v1/admin/generated-stories`.
 
 ## Notes
 

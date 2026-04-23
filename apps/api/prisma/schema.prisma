@@ -39,6 +39,7 @@ enum ContentKind {
   external_article
   youtube_video
   community_post
+  generated_story
 }
 
 enum FeedKind {
@@ -91,6 +92,14 @@ enum SubmissionStatus {
   rejected
 }
 
+enum GeneratedStoryStatus {
+  queued
+  draft
+  approved
+  rejected
+  failed
+}
+
 enum NewsletterCadence {
   daily
   weekly
@@ -135,6 +144,8 @@ model User {
   itemViews          ItemView[]
   submissions        Submission[]
   reviewedItems      Submission[]         @relation("SubmissionReviewer")
+  generatedStoryRequests GeneratedStoryDraft[] @relation("GeneratedStoryRequester")
+  generatedStoryReviews  GeneratedStoryDraft[] @relation("GeneratedStoryReviewer")
   passwordResetTokens PasswordResetToken[]
   modeSwitchAudits   ModeSwitchAudit[]
   aiUsage            AiUsageLedger[]
@@ -245,6 +256,7 @@ model ContentItem {
   albumItems      AlbumItem[]
   pinnedSlots     PinnedSlot[]
   aiUsage         AiUsageLedger[]
+  generatedStoryDrafts GeneratedStoryDraft[]
   newsletterDeliveries NewsletterDeliveryItem[]
 }
 
@@ -358,6 +370,33 @@ model Submission {
   updatedAt     DateTime         @updatedAt
   submittedBy   User             @relation(fields: [submittedById], references: [id], onDelete: Cascade)
   reviewedBy    User?            @relation("SubmissionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+}
+
+model GeneratedStoryDraft {
+  id               String               @id @default(cuid())
+  status           GeneratedStoryStatus @default(queued)
+  subject          SubjectTag
+  prompt           String               @db.Text
+  requestedById    String
+  reviewedById     String?
+  itemId           String?
+  title            String?
+  summary          String?              @db.Text
+  bodyMarkdown     String?              @db.LongText
+  citationsJson    String               @db.LongText
+  verificationJson String?              @db.LongText
+  failureReason    String?              @db.Text
+  totalCostUsd     Decimal              @default(0) @db.Decimal(10, 4)
+  generatedAt      DateTime?
+  reviewedAt       DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  requestedBy      User                 @relation("GeneratedStoryRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  reviewedBy       User?                @relation("GeneratedStoryReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  item             ContentItem?         @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([subject, createdAt])
 }
 
 model AiConfig {

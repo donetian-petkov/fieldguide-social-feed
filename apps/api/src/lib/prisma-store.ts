@@ -11,10 +11,14 @@ import type {
   ContentMode,
   ContentTag,
   FeedQuery,
+  GeneratedStoryCitation,
+  GeneratedStoryDraftDto,
+  GeneratedStoryVerification,
   InterfaceLanguage,
   ModerationFlag,
   SourceDefinition,
   SubmissionDto,
+  SubjectTag,
   UserRole,
   UserSettingsDto
 } from '@edu-feed/shared';
@@ -76,6 +80,13 @@ type AlbumWithRelations = Prisma.AlbumGetPayload<{
 type SubmissionWithUser = Prisma.SubmissionGetPayload<{
   include: {
     submittedBy: true;
+  };
+}>;
+
+type GeneratedStoryDraftWithRelations = Prisma.GeneratedStoryDraftGetPayload<{
+  include: {
+    requestedBy: true;
+    reviewedBy: true;
   };
 }>;
 
@@ -322,6 +333,48 @@ function buildSubmissionDto(submission: SubmissionWithUser): SubmissionDto {
     submittedBy: submission.submittedBy.username,
     status: submission.status,
     createdAt: submission.createdAt.toISOString()
+  };
+}
+
+function parseJsonArray<T>(value: string | null): T[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as T[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonObject<T>(value: string | null): T | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
+function buildGeneratedStoryDraftDto(draft: GeneratedStoryDraftWithRelations): GeneratedStoryDraftDto {
+  return {
+    id: draft.id,
+    status: draft.status,
+    subject: draft.subject,
+    prompt: draft.prompt,
+    requestedBy: draft.requestedBy.username,
+    reviewedBy: draft.reviewedBy?.username || null,
+    itemId: draft.itemId,
+    title: draft.title,
+    summary: draft.summary,
+    bodyMarkdown: draft.bodyMarkdown,
+    citations: parseJsonArray<GeneratedStoryCitation>(draft.citationsJson),
+    verification: parseJsonObject<GeneratedStoryVerification>(draft.verificationJson),
+    failureReason: draft.failureReason,
+    totalCostUsd: Number(draft.totalCostUsd),
+    createdAt: draft.createdAt.toISOString(),
+    updatedAt: draft.updatedAt.toISOString(),
+    generatedAt: draft.generatedAt?.toISOString() || null,
+    reviewedAt: draft.reviewedAt?.toISOString() || null
   };
 }
 
@@ -1351,7 +1404,7 @@ export class PrismaStore implements AppStore {
   }
 
   async getAdminSnapshot(): Promise<AdminSnapshot> {
-    const [sources, submissions, users, items, comments, errorLogs, aiConfig, aiUsage] = await Promise.all([
+    const [sources, submissions, users, items, comments, errorLogs, aiConfig, aiUsage, generatedStories] = await Promise.all([
       this.listSources(),
       this.prisma.submission.findMany({
         include: {
@@ -1416,6 +1469,16 @@ export class PrismaStore implements AppStore {
           createdAt: 'desc'
         },
         take: 20
+      }),
+      this.prisma.generatedStoryDraft.findMany({
+        include: {
+          requestedBy: true,
+          reviewedBy: true
+        },
+        orderBy: {
+          createdAt: 'desc'
+        },
+        take: 30
       })
     ]);
 
@@ -1434,7 +1497,212 @@ export class PrismaStore implements AppStore {
         resolvedAt: log.resolvedAt?.toISOString() || null
       })),
       aiConfig: aiConfig ? aiConfigToDto(aiConfig) : DEMO_AI_CONFIG,
-      aiUsage: aiUsage.map(aiUsageToDto)
+      aiUsage: aiUsage.map(aiUsageToDto),
+      generatedStories: generatedStories.map(buildGeneratedStoryDraftDto)
+    };
+  }
+
+  async listGeneratedStoryDrafts() {
+    const drafts = await this.prisma.generatedStoryDraft.findMany({
+      include: {
+        requestedBy: true,
+        reviewedBy: true
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+    return drafts.map(buildGeneratedStoryDraftDto);
+  }
+
+  async requestGeneratedStory(username: string, input: { subject: SubjectTag; prompt: string }) {
+    const user = await this.requireUser(username);
+    const draft = await this.prisma.generatedStoryDraft.create({
+      data: {
+        subject: input.subject,
+        prompt: input.prompt.trim(),
+        requestedById: user.id,
+        citationsJson: '[]'
+      },
+      include: {
+        requestedBy: true,
+        reviewedBy: true
+      }
+    });
+    return buildGeneratedStoryDraftDto(draft);
+  }
+
+  async reviewGeneratedStory(username: string, draftId: string, decision: 'approved' | 'rejected') {
+    const reviewer = await this.requireUser(username);
+    const draft = await this.prisma.generatedStoryDraft.findUnique({
+      where: {
+        id: draftId
+      },
+      include: {
+        requestedBy: true,
+        reviewedBy: true
+      }
+    });
+    if (!draft) throw new Error('Generated draft not found.');
+    if (draft.status === 'approved') {
+      return {
+        draft: buildGeneratedStoryDraftDto(draft),
+        item: draft.itemId ? await this.getItem(draft.itemId, username) : null
+      };
+    }
+    if (decision === 'rejected') {
+      const rejected = await this.prisma.generatedStoryDraft.update({
+        where: {
+          id: draftId
+        },
+        data: {
+          status: 'rejected',
+          reviewedById: reviewer.id,
+          reviewedAt: new Date()
+        },
+        include: {
+          requestedBy: true,
+          reviewedBy: true
+        }
+      });
+      return {
+        draft: buildGeneratedStoryDraftDto(rejected),
+        item: null
+      };
+    }
+
+    if (draft.status !== 'draft') {
+      throw new Error('Only verified draft stories can be approved.');
+    }
+    if (!draft.title?.trim() || !draft.summary?.trim() || !draft.bodyMarkdown?.trim()) {
+      throw new Error('Generated draft is incomplete and cannot be approved.');
+    }
+    const citations = parseJsonArray<GeneratedStoryCitation>(draft.citationsJson);
+    const verifier = parseJsonObject<GeneratedStoryVerification>(draft.verificationJson);
+    if (!citations.length || !verifier?.passed) {
+      throw new Error('Generated draft requires passing verification and at least one source citation before approval.');
+    }
+
+    let approvedItem: ContentItem | null = null;
+    await this.prisma.$transaction(async (tx) => {
+      const source = await this.ensureGeneratedStorySource(tx);
+      const title = draft.title!.trim();
+      const summary = draft.summary!.trim();
+      const slugBase = slugify(title) || `generated-story-${randomUUID().slice(0, 8)}`;
+      const sourceList = citations
+        .map((citation) => `- [${citation.title}](${citation.url}) - ${citation.sourceName}`)
+        .join('\n');
+      const bodyMarkdown = `${draft.bodyMarkdown!.trim()}\n\n## Sources\n${sourceList}`;
+      const citedItem = citations[0]
+        ? await tx.contentItem.findFirst({
+            where: {
+              externalUrl: citations[0].url
+            },
+            select: {
+              coverImageUrl: true
+            }
+          })
+        : null;
+      const item = await tx.contentItem.create({
+        data: {
+          id: `item-${randomUUID()}`,
+          slug: `${slugBase}-${randomUUID().slice(0, 8)}`,
+          dedupeKey: hashToken(`generated-story:${draft.id}`),
+          kind: 'generated_story',
+          sourceId: source.id,
+          authorId: draft.requestedById,
+          publishedAt: new Date(),
+          originalTitle: title,
+          originalSummary: summary,
+          bodyMarkdown,
+          coverImageUrl: citedItem?.coverImageUrl || source.iconUrl,
+          externalUrl: null,
+          youtubeVideoId: null,
+          subject: draft.subject,
+          audience: 'standard_only',
+          translations: {
+            create: [
+              {
+                language: 'en',
+                title,
+                summary,
+                slug: `${slugBase}-en`
+              },
+              {
+                language: 'bg',
+                title,
+                summary,
+                slug: `${slugBase}-bg`
+              }
+            ]
+          },
+          tags: {
+            create: [
+              {
+                label: draft.subject.replace('_', ' '),
+                type: 'subject',
+                value: draft.subject
+              },
+              {
+                label: 'Standard',
+                type: 'audience',
+                value: 'standard_only'
+              },
+              {
+                label: 'AI Draft',
+                type: 'meta',
+                value: 'ai_generated'
+              },
+              {
+                label: 'Cited Sources',
+                type: 'meta',
+                value: 'cited_sources'
+              }
+            ]
+          }
+        },
+        include: {
+          source: {
+            include: {
+              feeds: true
+            }
+          },
+          author: {
+            include: {
+              settings: true
+            }
+          },
+          translations: true,
+          tags: true
+        }
+      });
+      await tx.generatedStoryDraft.update({
+        where: {
+          id: draftId
+        },
+        data: {
+          status: 'approved',
+          itemId: item.id,
+          reviewedById: reviewer.id,
+          reviewedAt: new Date()
+        }
+      });
+      approvedItem = buildItemDto(item);
+    });
+
+    const updated = await this.prisma.generatedStoryDraft.findUnique({
+      where: {
+        id: draftId
+      },
+      include: {
+        requestedBy: true,
+        reviewedBy: true
+      }
+    });
+    if (!updated) throw new Error('Generated draft not found.');
+    return {
+      draft: buildGeneratedStoryDraftDto(updated),
+      item: approvedItem
     };
   }
 
@@ -2084,6 +2352,36 @@ export class PrismaStore implements AppStore {
           create: {
             kind: 'custom',
             feedUrl: `${this.appUrl}/community/feed.xml`
+          }
+        }
+      }
+    });
+  }
+
+  private async ensureGeneratedStorySource(tx: Prisma.TransactionClient) {
+    const existing = await tx.source.findUnique({
+      where: {
+        id: 'src-fieldguide-generated'
+      }
+    });
+    if (existing) return existing;
+    return tx.source.create({
+      data: {
+        id: 'src-fieldguide-generated',
+        name: 'Fieldguide Generated Guides',
+        slug: 'fieldguide-generated-guides',
+        iconUrl: `${this.appUrl}/generated-story-icon.png`,
+        siteUrl: `${this.appUrl}/admin/ai`,
+        description: 'Admin-approved educational drafts generated from cited source material.',
+        subjectsJson: JSON.stringify(['history', 'art', 'books', 'movies', 'country_knowledge', 'photography', 'nature', 'video']),
+        language: 'en',
+        defaultAudience: 'standard_only',
+        sourceType: 'editorial',
+        status: 'active',
+        feeds: {
+          create: {
+            kind: 'custom',
+            feedUrl: `${this.appUrl}/generated-stories/feed.xml`
           }
         }
       }

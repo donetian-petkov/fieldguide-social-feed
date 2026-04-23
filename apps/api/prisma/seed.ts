@@ -14,6 +14,7 @@ import {
 } from '@edu-feed/shared';
 
 const prisma = new PrismaClient();
+const seedDemoContent = process.env.SEED_DEMO_CONTENT === 'true';
 
 function buildDedupeKey(item: { sourceId: string; externalUrl: string | null; originalTitle: string }) {
   return `${item.sourceId}:${item.externalUrl || item.originalTitle}`.slice(0, 191);
@@ -30,6 +31,7 @@ async function main() {
   await prisma.contentTranslation.deleteMany();
   await prisma.pinnedSlot.deleteMany();
   await prisma.aiUsageLedger.deleteMany();
+  await prisma.generatedStoryDraft.deleteMany();
   await prisma.contentItem.deleteMany();
   await prisma.sourceFeed.deleteMany();
   await prisma.source.deleteMany();
@@ -127,6 +129,26 @@ async function main() {
         }
       }
     });
+  }
+
+  await prisma.aiConfig.create({
+    data: {
+      id: 1,
+      provider: DEMO_AI_CONFIG.provider,
+      summaryModel: DEMO_AI_CONFIG.summaryModel,
+      translationModel: DEMO_AI_CONFIG.translationModel,
+      askModel: DEMO_AI_CONFIG.askModel,
+      newsletterModel: DEMO_AI_CONFIG.newsletterModel,
+      monthlyBudgetUsd: DEMO_AI_CONFIG.monthlyBudgetUsd,
+      perJobBudgetUsd: DEMO_AI_CONFIG.perJobBudgetUsd,
+      autoDowngrade: DEMO_AI_CONFIG.autoDowngrade,
+      pauseOnBudgetExceeded: DEMO_AI_CONFIG.pauseOnBudgetExceeded
+    }
+  });
+
+  if (!seedDemoContent) {
+    console.info('Seeded accounts, source registry, and AI config. Set SEED_DEMO_CONTENT=true to also load demo articles.');
+    return;
   }
 
   for (const item of DEMO_ITEMS) {
@@ -277,20 +299,7 @@ async function main() {
     });
   }
 
-  await prisma.aiConfig.create({
-    data: {
-      id: 1,
-      provider: DEMO_AI_CONFIG.provider,
-      summaryModel: DEMO_AI_CONFIG.summaryModel,
-      translationModel: DEMO_AI_CONFIG.translationModel,
-      askModel: DEMO_AI_CONFIG.askModel,
-      newsletterModel: DEMO_AI_CONFIG.newsletterModel,
-      monthlyBudgetUsd: DEMO_AI_CONFIG.monthlyBudgetUsd,
-      perJobBudgetUsd: DEMO_AI_CONFIG.perJobBudgetUsd,
-      autoDowngrade: DEMO_AI_CONFIG.autoDowngrade,
-      pauseOnBudgetExceeded: DEMO_AI_CONFIG.pauseOnBudgetExceeded
-    }
-  });
+  console.info('Seeded accounts, source registry, AI config, and explicit demo content.');
 }
 
 main()

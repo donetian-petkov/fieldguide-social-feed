@@ -11,10 +11,15 @@ type NewsletterJobPayload = {
   mode: 'weekly' | 'daily';
 };
 
+type GeneratedStoryJobPayload = {
+  draftId: string;
+};
+
 export interface AppQueues {
   scheduleSource(sourceId: string, feedUrl: string, pollIntervalSec?: number): Promise<void>;
   runSourceResync(sourceId: string, feedUrl: string): Promise<void>;
   removeSourceSchedule(sourceId: string): Promise<void>;
+  generateStoryDraft(draftId: string): Promise<void>;
   scheduleNewsletter(username: string, mode?: 'weekly' | 'daily'): Promise<void>;
   syncNewsletterSchedule(username: string, enabled: boolean, mode?: 'weekly' | 'daily'): Promise<void>;
   close(): Promise<void>;
@@ -26,6 +31,8 @@ export class NoopQueues implements AppQueues {
   async runSourceResync() {}
 
   async removeSourceSchedule() {}
+
+  async generateStoryDraft() {}
 
   async scheduleNewsletter() {}
 
@@ -41,6 +48,8 @@ export class BullMqAppQueues implements AppQueues {
 
   private readonly newsletterQueue: Queue<NewsletterJobPayload>;
 
+  private readonly generatedStoryQueue: Queue<GeneratedStoryJobPayload>;
+
   constructor(redisUrl: string) {
     this.connection = new IORedis(redisUrl, {
       maxRetriesPerRequest: null
@@ -49,6 +58,9 @@ export class BullMqAppQueues implements AppQueues {
       connection: this.connection
     });
     this.newsletterQueue = new Queue<NewsletterJobPayload>('newsletter', {
+      connection: this.connection
+    });
+    this.generatedStoryQueue = new Queue<GeneratedStoryJobPayload>('generated-story', {
       connection: this.connection
     });
   }
@@ -94,6 +106,20 @@ export class BullMqAppQueues implements AppQueues {
     );
   }
 
+  async generateStoryDraft(draftId: string) {
+    await this.generatedStoryQueue.add(
+      `generated-story:${draftId}`,
+      {
+        draftId
+      },
+      {
+        jobId: `generated-story:${draftId}`,
+        removeOnComplete: true,
+        removeOnFail: 50
+      }
+    );
+  }
+
   async scheduleNewsletter(username: string, mode: 'weekly' | 'daily' = 'weekly') {
     await this.newsletterQueue.add(
       `newsletter:${username}:${mode}`,
@@ -126,7 +152,7 @@ export class BullMqAppQueues implements AppQueues {
   }
 
   async close() {
-    await Promise.allSettled([this.ingestionQueue.close(), this.newsletterQueue.close()]);
+    await Promise.allSettled([this.ingestionQueue.close(), this.newsletterQueue.close(), this.generatedStoryQueue.close()]);
     await this.connection.quit();
   }
 }

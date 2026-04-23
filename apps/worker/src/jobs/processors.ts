@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import type { Queue } from 'bullmq';
 import { PrismaClient, type Prisma } from '@prisma/client';
-import type { AudienceLabel, InterfaceLanguage, ModerationFlag, SubjectTag } from '@edu-feed/shared';
+import type { AudienceLabel, GeneratedStoryCitation, GeneratedStoryVerification, InterfaceLanguage, ModerationFlag, SubjectTag } from '@edu-feed/shared';
 import {
   DEMO_AI_CONFIG,
   audienceLabelSchema,
@@ -21,7 +21,7 @@ import { Resend } from 'resend';
 import { z } from 'zod';
 
 import { getWorkerConfig } from '../config.js';
-import type { AiEnrichmentJobPayload, IngestionJobPayload, NewsletterJobPayload } from './types.js';
+import type { AiEnrichmentJobPayload, GeneratedStoryJobPayload, IngestionJobPayload, NewsletterJobPayload } from './types.js';
 import { buildPreferenceWeights, mergeSelectedCandidates, rankNewsletterCandidates } from './newsletter-ranking.js';
 
 const config = getWorkerConfig();
@@ -47,6 +47,14 @@ type NewsletterUserRecord = Prisma.UserGetPayload<{
 }>;
 
 type NewsletterItemRecord = Prisma.ContentItemGetPayload<{
+  include: {
+    source: true;
+    translations: true;
+    tags: true;
+  };
+}>;
+
+type GeneratedStorySourceItem = Prisma.ContentItemGetPayload<{
   include: {
     source: true;
     translations: true;
@@ -170,6 +178,20 @@ const newsletterOutputSchema = z.object({
 
 const newsletterSelectionSchema = z.object({
   selectedIds: z.array(z.string().trim().min(1)).min(1).max(5)
+});
+
+const generatedStoryOutputSchema = z.object({
+  title: z.string().trim().min(8).max(180),
+  summary: z.string().trim().min(40).max(520),
+  bodyMarkdown: z.string().trim().min(240).max(6000),
+  citedUrls: z.array(z.string().url()).min(1).max(8)
+});
+
+const generatedStoryVerificationSchema = z.object({
+  passed: z.boolean(),
+  score: z.number().min(0).max(1),
+  notes: z.string().trim().min(1).max(1000),
+  unsupportedClaims: z.array(z.string().trim().min(1).max(240)).max(12)
 });
 
 const aiKeys = {
@@ -774,7 +796,7 @@ function chooseBudgetedModel(input: {
 }
 
 async function runBudgetedCompletion<T>(input: {
-  purpose: 'summary' | 'translation' | 'classification' | 'newsletter';
+  purpose: 'summary' | 'translation' | 'classification' | 'newsletter' | 'generated_story' | 'generated_story_verification';
   provider: EffectiveAiConfig['provider'];
   configuredModel: string;
   autoDowngrade: boolean;
@@ -1568,6 +1590,177 @@ async function createNewsletterSummary(input: {
   };
 }
 
+function buildGeneratedStoryCitation(item: GeneratedStorySourceItem): GeneratedStoryCitation | null {
+  const url = item.externalUrl || item.source.siteUrl;
+  if (!url) return null;
+  return {
+    title: item.originalTitle,
+    url,
+    sourceName: item.source.name,
+    publishedAt: item.publishedAt.toISOString(),
+    excerpt: item.originalSummary
+  };
+}
+
+async function loadGeneratedStorySourcePack(subject: SubjectTag) {
+  const items = await prisma.contentItem.findMany({
+    where: {
+      OR: [
+        {
+          subject
+        },
+        {
+          tags: {
+            some: {
+              type: 'subject',
+              value: subject
+            }
+          }
+        }
+      ],
+      removedAt: null,
+      kind: {
+        in: ['external_article', 'youtube_video']
+      },
+      source: {
+        status: 'active'
+      }
+    },
+    include: {
+      source: true,
+      translations: true,
+      tags: true
+    },
+    orderBy: {
+      publishedAt: 'desc'
+    },
+    take: 10
+  });
+
+  const seen = new Set<string>();
+  const citations: GeneratedStoryCitation[] = [];
+  for (const item of items) {
+    const citation = buildGeneratedStoryCitation(item);
+    if (!citation || seen.has(citation.url)) continue;
+    seen.add(citation.url);
+    citations.push(citation);
+  }
+  return citations.slice(0, 6);
+}
+
+function formatGeneratedStorySourcePack(citations: GeneratedStoryCitation[]) {
+  return citations
+    .map(
+      (citation, index) =>
+        [
+          `[${index + 1}] ${citation.title}`,
+          `Source: ${citation.sourceName}`,
+          `URL: ${citation.url}`,
+          `Published: ${citation.publishedAt || 'unknown'}`,
+          `Source excerpt: ${citation.excerpt || 'No excerpt available.'}`
+        ].join('\n')
+    )
+    .join('\n\n');
+}
+
+async function failGeneratedStoryDraft(draftId: string, failureReason: string, patch: Prisma.GeneratedStoryDraftUpdateInput = {}) {
+  await prisma.generatedStoryDraft.update({
+    where: {
+      id: draftId
+    },
+    data: {
+      ...patch,
+      status: 'failed',
+      failureReason
+    }
+  });
+  await recordSystemError('ai', 'warn', `Generated story draft ${draftId} failed: ${failureReason}`);
+}
+
+async function generateStoryDraft(input: {
+  draftId: string;
+  userId: string;
+  subject: SubjectTag;
+  prompt: string;
+  aiConfig: EffectiveAiConfig;
+  citations: GeneratedStoryCitation[];
+  budget: AiBudgetState;
+}) {
+  const sourcePack = formatGeneratedStorySourcePack(input.citations);
+  const generation = await runBudgetedCompletion<z.infer<typeof generatedStoryOutputSchema>>({
+    purpose: 'generated_story',
+    provider: input.aiConfig.provider,
+    configuredModel: input.aiConfig.newsletterModel,
+    autoDowngrade: input.aiConfig.autoDowngrade,
+    temperature: 0.25,
+    systemPrompt:
+      'You are a careful educational editor creating an original, concise feed story from a provided source pack. Return JSON only with keys "title", "summary", "bodyMarkdown", and "citedUrls". Use only facts present in the source pack, cite sources inline as markdown links, do not invent facts, and do not reproduce full article bodies.',
+    userPrompt: [
+      `Subject: ${input.subject}`,
+      `Admin request: ${input.prompt}`,
+      'Source pack:',
+      sourcePack,
+      'Draft requirements:',
+      '- Write 4 to 7 short paragraphs.',
+      '- Every concrete claim must be supported by at least one cited URL from the source pack.',
+      '- The summary must be one paragraph.',
+      '- citedUrls must contain only URLs from the source pack that are actually used.'
+    ].join('\n\n'),
+    maxOutputTokens: 900,
+    budget: input.budget,
+    userId: input.userId,
+    parser: (text) => parseJsonCompletion(text, generatedStoryOutputSchema)
+  });
+
+  if (!generation) return null;
+
+  const allowedUrls = new Set(input.citations.map((citation) => citation.url));
+  const usedCitations = input.citations.filter((citation) => generation.output.citedUrls.includes(citation.url) && allowedUrls.has(citation.url));
+  const finalCitations = usedCitations.length ? usedCitations : input.citations.slice(0, 3);
+
+  const verification = await runBudgetedCompletion<GeneratedStoryVerification>({
+    purpose: 'generated_story_verification',
+    provider: input.aiConfig.provider,
+    configuredModel: input.aiConfig.translationModel,
+    autoDowngrade: input.aiConfig.autoDowngrade,
+    temperature: 0,
+    systemPrompt:
+      'You verify educational drafts against cited source material. Return JSON only with keys "passed", "score", "notes", and "unsupportedClaims". Pass only when the draft is grounded in the source pack and all cited URLs are from the source pack.',
+    userPrompt: [
+      `Subject: ${input.subject}`,
+      'Source pack:',
+      sourcePack,
+      'Draft title:',
+      generation.output.title,
+      'Draft summary:',
+      generation.output.summary,
+      'Draft body:',
+      generation.output.bodyMarkdown,
+      `Draft cited URLs: ${generation.output.citedUrls.join(', ')}`
+    ].join('\n\n'),
+    maxOutputTokens: 260,
+    budget: input.budget,
+    userId: input.userId,
+    parser: (text) => parseJsonCompletion(text, generatedStoryVerificationSchema)
+  });
+
+  if (!verification) {
+    return {
+      output: generation.output,
+      citations: finalCitations,
+      verification: null,
+      totalCostUsd: generation.totalCostUsd
+    };
+  }
+
+  return {
+    output: generation.output,
+    citations: finalCitations,
+    verification: verification.output,
+    totalCostUsd: generation.totalCostUsd + verification.totalCostUsd
+  };
+}
+
 export async function bootstrapRecurringJobs(queues: SchedulerQueues) {
   const [feeds, users] = await Promise.all([
     prisma.sourceFeed.findMany({
@@ -1791,6 +1984,126 @@ export async function processAiEnrichmentJob(payload: AiEnrichmentJobPayload) {
     ok: true,
     itemId: payload.itemId,
     completedTasks: payload.tasks
+  };
+}
+
+export async function processGeneratedStoryJob(payload: GeneratedStoryJobPayload) {
+  const draft = await prisma.generatedStoryDraft.findUnique({
+    where: {
+      id: payload.draftId
+    },
+    include: {
+      requestedBy: true
+    }
+  });
+  if (!draft) {
+    throw new Error(`Generated story draft not found for ${payload.draftId}`);
+  }
+  if (draft.status !== 'queued') {
+    return {
+      ok: true,
+      draftId: draft.id,
+      skipped: true,
+      status: draft.status
+    };
+  }
+
+  const citations = await loadGeneratedStorySourcePack(draft.subject);
+  if (!citations.length) {
+    await failGeneratedStoryDraft(draft.id, `No ingested source items are available for ${draft.subject}. Run source ingestion first.`, {
+      citationsJson: JSON.stringify([])
+    });
+    return {
+      ok: false,
+      draftId: draft.id,
+      status: 'failed',
+      reason: 'no_source_pack'
+    };
+  }
+
+  const aiConfig = await getAiConfig();
+  const monthlySpent = await getMonthlyAiSpendUsd();
+  const monthlyRemaining = Math.max(0, aiConfig.monthlyBudgetUsd - monthlySpent);
+  if (monthlyRemaining <= 0) {
+    await failGeneratedStoryDraft(draft.id, `Monthly AI budget cap reached: $${aiConfig.monthlyBudgetUsd.toFixed(2)}.`, {
+      citationsJson: JSON.stringify(citations)
+    });
+    return {
+      ok: false,
+      draftId: draft.id,
+      status: 'failed',
+      reason: 'monthly_cap'
+    };
+  }
+
+  const result = await generateStoryDraft({
+    draftId: draft.id,
+    userId: draft.requestedById,
+    subject: draft.subject,
+    prompt: draft.prompt,
+    aiConfig,
+    citations,
+    budget: {
+      remainingJobBudgetUsd: aiConfig.perJobBudgetUsd,
+      remainingMonthlyBudgetUsd: monthlyRemaining
+    }
+  });
+
+  if (!result) {
+    await failGeneratedStoryDraft(draft.id, 'AI provider, key, or budget prevented generation.', {
+      citationsJson: JSON.stringify(citations)
+    });
+    return {
+      ok: false,
+      draftId: draft.id,
+      status: 'failed',
+      reason: 'generation_unavailable'
+    };
+  }
+
+  if (!result.verification) {
+    await failGeneratedStoryDraft(draft.id, 'Verifier pass did not complete, so the draft was not made approvable.', {
+      title: result.output.title,
+      summary: result.output.summary,
+      bodyMarkdown: result.output.bodyMarkdown,
+      citationsJson: JSON.stringify(result.citations),
+      totalCostUsd: result.totalCostUsd,
+      generatedAt: new Date()
+    });
+    return {
+      ok: false,
+      draftId: draft.id,
+      status: 'failed',
+      reason: 'verification_unavailable'
+    };
+  }
+
+  const verificationPassed = result.verification.passed && result.verification.score >= 0.78 && result.verification.unsupportedClaims.length === 0;
+  await prisma.generatedStoryDraft.update({
+    where: {
+      id: draft.id
+    },
+    data: {
+      status: verificationPassed ? 'draft' : 'failed',
+      title: result.output.title,
+      summary: takeParagraph(result.output.summary, result.output.summary),
+      bodyMarkdown: result.output.bodyMarkdown,
+      citationsJson: JSON.stringify(result.citations),
+      verificationJson: JSON.stringify(result.verification),
+      failureReason: verificationPassed
+        ? null
+        : `Verifier rejected the draft with score ${result.verification.score.toFixed(2)}: ${result.verification.notes}`,
+      totalCostUsd: result.totalCostUsd,
+      generatedAt: new Date()
+    }
+  });
+
+  return {
+    ok: verificationPassed,
+    draftId: draft.id,
+    status: verificationPassed ? 'draft' : 'failed',
+    verifierScore: result.verification.score,
+    totalCostUsd: result.totalCostUsd
   };
 }
 

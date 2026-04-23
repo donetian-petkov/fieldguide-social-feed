@@ -11,6 +11,7 @@ import type {
   ContentMode,
   ErrorLogDto,
   SourceDefinition,
+  GeneratedStoryDraftDto,
   SubmissionDto,
   SubjectFeed,
   UserSettingsDto
@@ -54,6 +55,7 @@ type AdminDashboardResponse = {
   errorLogs: ErrorLogDto[];
   aiConfig: AiModelConfig;
   aiUsage: AiUsageSnapshot[];
+  generatedStories: GeneratedStoryDraftDto[];
 };
 
 type AuthBody = {
@@ -177,6 +179,29 @@ export const fieldguideApi = createApi({
         body
       }),
       invalidatesTags: ['Admin']
+    }),
+    generatedStories: builder.query<{ drafts: GeneratedStoryDraftDto[] }, void>({
+      query: () => '/v1/admin/generated-stories',
+      providesTags: ['Admin']
+    }),
+    requestGeneratedStory: builder.mutation<{ draft: GeneratedStoryDraftDto }, { subject: GeneratedStoryDraftDto['subject']; prompt: string }>({
+      query: (body) => ({
+        url: '/v1/admin/generated-stories',
+        method: 'POST',
+        body
+      }),
+      invalidatesTags: ['Admin']
+    }),
+    reviewGeneratedStory: builder.mutation<
+      { draft: GeneratedStoryDraftDto; item: ContentItem | null },
+      { draftId: string; decision: 'approved' | 'rejected' }
+    >({
+      query: ({ draftId, decision }) => ({
+        url: `/v1/admin/generated-stories/${draftId}/review`,
+        method: 'POST',
+        body: { decision }
+      }),
+      invalidatesTags: ['Admin', 'Feed', 'Item', 'Profile']
     }),
     reviewSubmission: builder.mutation<{ submission: SubmissionDto; item: ContentItem | null }, { submissionId: string; decision: 'approved' | 'rejected' }>({
       query: ({ submissionId, decision }) => ({
@@ -377,6 +402,7 @@ export const {
   useDeleteAdminCommentMutation,
   useFeedQuery,
   useForgotPasswordMutation,
+  useGeneratedStoriesQuery,
   useHealthQuery,
   useHideItemMutation,
   useItemQuery,
@@ -390,6 +416,8 @@ export const {
   useRegisterMutation,
   useRemoveAdminItemMutation,
   useReviewSubmissionMutation,
+  useRequestGeneratedStoryMutation,
+  useReviewGeneratedStoryMutation,
   useResetPasswordMutation,
   useResyncSourceMutation,
   useSaveItemMutation,

@@ -24,7 +24,8 @@ const envSchema = z.object({
   DEMO_MODE: z
     .string()
     .optional()
-    .transform((value) => value !== 'false'),
+    .default('false')
+    .transform((value) => value === 'true'),
   DEFAULT_AI_PROVIDER: z.enum(['openai', 'anthropic', 'openrouter']).default('openai'),
   SUMMARY_MODEL: z.string().default('gpt-4.1-mini'),
   TRANSLATION_MODEL: z.string().default('gpt-4.1-mini'),

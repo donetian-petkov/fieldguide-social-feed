@@ -5,7 +5,7 @@ export const contentLanguageModeSchema = z.enum(['single', 'dual']);
 export const themeModeSchema = z.enum(['light', 'dark', 'system']);
 export const contentModeSchema = z.enum(['kid', 'standard', 'adult']);
 export const userRoleSchema = z.enum(['user', 'admin']);
-export const contentKindSchema = z.enum(['external_article', 'youtube_video', 'community_post']);
+export const contentKindSchema = z.enum(['external_article', 'youtube_video', 'community_post', 'generated_story']);
 export const feedKindSchema = z.enum(['rss', 'youtube', 'custom']);
 export const sourceStatusSchema = z.enum(['active', 'paused', 'error']);
 export const audienceLabelSchema = z.enum(['kid_safe', 'standard_only', 'adult_only']);
@@ -38,6 +38,7 @@ export const aiProviderSchema = z.enum(['openai', 'anthropic', 'openrouter']);
 export const aiBudgetModeSchema = z.enum(['low', 'standard', 'high']);
 export const sourceTypeSchema = z.enum(['editorial', 'community', 'adult_educational']);
 export const submissionStatusSchema = z.enum(['pending', 'approved', 'rejected']);
+export const generatedStoryStatusSchema = z.enum(['queued', 'draft', 'approved', 'rejected', 'failed']);
 export const newsletterCadenceSchema = z.enum(['daily', 'weekly']);
 
 export const subjectFeedSchema = z.enum([
@@ -243,7 +244,7 @@ export const aiModelConfigSchema = z.object({
 export const aiUsageSnapshotSchema = z.object({
   provider: aiProviderSchema,
   model: z.string(),
-  purpose: z.enum(['summary', 'translation', 'classification', 'ask', 'newsletter']),
+  purpose: z.enum(['summary', 'translation', 'classification', 'ask', 'newsletter', 'generated_story', 'generated_story_verification']),
   inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
   totalCostUsd: z.number().nonnegative(),
@@ -259,6 +260,42 @@ export const submissionDtoSchema = z.object({
   submittedBy: z.string(),
   status: submissionStatusSchema,
   createdAt: z.string()
+});
+
+export const generatedStoryCitationSchema = z.object({
+  title: z.string(),
+  url: z.string().url(),
+  sourceName: z.string(),
+  publishedAt: z.string().nullable(),
+  excerpt: z.string().nullable()
+});
+
+export const generatedStoryVerificationSchema = z.object({
+  passed: z.boolean(),
+  score: z.number().min(0).max(1),
+  notes: z.string(),
+  unsupportedClaims: z.array(z.string())
+});
+
+export const generatedStoryDraftDtoSchema = z.object({
+  id: z.string(),
+  status: generatedStoryStatusSchema,
+  subject: subjectTagSchema,
+  prompt: z.string(),
+  requestedBy: z.string(),
+  reviewedBy: z.string().nullable(),
+  itemId: z.string().nullable(),
+  title: z.string().nullable(),
+  summary: z.string().nullable(),
+  bodyMarkdown: z.string().nullable(),
+  citations: z.array(generatedStoryCitationSchema),
+  verification: generatedStoryVerificationSchema.nullable(),
+  failureReason: z.string().nullable(),
+  totalCostUsd: z.number().nonnegative(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  generatedAt: z.string().nullable(),
+  reviewedAt: z.string().nullable()
 });
 
 export const errorLogDtoSchema = z.object({
@@ -285,6 +322,7 @@ export type VibePreset = z.infer<typeof vibePresetSchema>;
 export type AIProvider = z.infer<typeof aiProviderSchema>;
 export type AIBudgetMode = z.infer<typeof aiBudgetModeSchema>;
 export type NewsletterCadence = z.infer<typeof newsletterCadenceSchema>;
+export type GeneratedStoryStatus = z.infer<typeof generatedStoryStatusSchema>;
 export type SubjectFeed = z.infer<typeof subjectFeedSchema>;
 export type SourceDefinition = z.infer<typeof sourceDefinitionSchema>;
 export type ContentTag = z.infer<typeof contentTagSchema>;
@@ -299,6 +337,9 @@ export type ModeSwitchResult = z.infer<typeof modeSwitchResultSchema>;
 export type AiModelConfig = z.infer<typeof aiModelConfigSchema>;
 export type AiUsageSnapshot = z.infer<typeof aiUsageSnapshotSchema>;
 export type SubmissionDto = z.infer<typeof submissionDtoSchema>;
+export type GeneratedStoryCitation = z.infer<typeof generatedStoryCitationSchema>;
+export type GeneratedStoryVerification = z.infer<typeof generatedStoryVerificationSchema>;
+export type GeneratedStoryDraftDto = z.infer<typeof generatedStoryDraftDtoSchema>;
 export type ErrorLogDto = z.infer<typeof errorLogDtoSchema>;
 
 export const SUBJECT_FEED_LABELS: Record<SubjectFeed, { en: string; bg: string }> = {

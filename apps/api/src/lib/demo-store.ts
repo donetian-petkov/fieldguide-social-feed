@@ -9,10 +9,12 @@ import type {
   ContentMode,
   ErrorLogDto,
   FeedQuery,
+  GeneratedStoryDraftDto,
   InterfaceLanguage,
   ModeSwitchResult,
   SourceDefinition,
   SubjectFeed,
+  SubjectTag,
   SubmissionDto,
   UserRole,
   UserSettingsDto
@@ -70,6 +72,7 @@ type AdminSnapshot = {
   errorLogs: ErrorLogDto[];
   aiConfig: AiModelConfig;
   aiUsage: AiUsageSnapshot[];
+  generatedStories: GeneratedStoryDraftDto[];
 };
 
 type AlbumDetail = {
@@ -111,6 +114,8 @@ export class DemoStore {
   private aiUsage = structuredClone(DEMO_AI_USAGE);
 
   private users = structuredClone(DEMO_USERS);
+
+  private generatedStories: GeneratedStoryDraftDto[] = [];
 
   private sessions = new Map<string, DemoSession>();
 
@@ -566,7 +571,165 @@ export class DemoStore {
       comments: this.comments,
       errorLogs: this.errorLogs,
       aiConfig: this.aiConfig,
-      aiUsage: this.aiUsage
+      aiUsage: this.aiUsage,
+      generatedStories: this.generatedStories
+    };
+  }
+
+  listGeneratedStoryDrafts() {
+    return this.generatedStories;
+  }
+
+  requestGeneratedStory(username: string, input: { subject: SubjectTag; prompt: string }) {
+    this.requireUser(username);
+    const sourceItems = this.items.filter((item) => item.subject === input.subject || item.subjects.includes(input.subject)).slice(0, 3);
+    const citations = sourceItems.map((item) => ({
+      title: item.originalTitle,
+      url: item.externalUrl || `${this.appUrl}/item/${item.slug}`,
+      sourceName: item.sourceName,
+      publishedAt: item.publishedAt,
+      excerpt: item.originalSummary
+    }));
+    const now = new Date().toISOString();
+    const draft: GeneratedStoryDraftDto = {
+      id: `generated-${randomUUID()}`,
+      status: citations.length ? 'draft' : 'failed',
+      subject: input.subject,
+      prompt: input.prompt,
+      requestedBy: username,
+      reviewedBy: null,
+      itemId: null,
+      title: citations.length ? `Generated guide: ${input.prompt.slice(0, 72)}` : null,
+      summary: citations.length
+        ? `A verifier-ready educational draft based on ${citations.length} cited source items.`
+        : null,
+      bodyMarkdown: citations.length
+        ? `This admin-only draft answers the request using only the cited source pack.\n\n${citations
+            .map((citation) => `- ${citation.title}: ${citation.excerpt}`)
+            .join('\n')}`
+        : null,
+      citations,
+      verification: citations.length
+        ? {
+            passed: true,
+            score: 0.92,
+            notes: 'Demo verifier passed because every claim is sourced from demo citations.',
+            unsupportedClaims: []
+          }
+        : null,
+      failureReason: citations.length ? null : 'No source items were available for this subject.',
+      totalCostUsd: citations.length ? 0.002 : 0,
+      createdAt: now,
+      updatedAt: now,
+      generatedAt: citations.length ? now : null,
+      reviewedAt: null
+    };
+    this.generatedStories.unshift(draft);
+    return draft;
+  }
+
+  reviewGeneratedStory(username: string, draftId: string, decision: 'approved' | 'rejected') {
+    this.requireUser(username);
+    const draft = this.generatedStories.find((entry) => entry.id === draftId);
+    if (!draft) throw new Error('Generated draft not found.');
+    const now = new Date().toISOString();
+    if (decision === 'rejected') {
+      draft.status = 'rejected';
+      draft.reviewedBy = username;
+      draft.reviewedAt = now;
+      draft.updatedAt = now;
+      return {
+        draft,
+        item: null
+      };
+    }
+
+    if (draft.status !== 'draft' || !draft.title || !draft.summary || !draft.bodyMarkdown || !draft.verification?.passed) {
+      throw new Error('Only verified draft stories can be approved.');
+    }
+
+    let generatedSource = this.sources.find((entry) => entry.id === 'src-fieldguide-generated');
+    if (!generatedSource) {
+      generatedSource = {
+        id: 'src-fieldguide-generated',
+        name: 'Fieldguide Generated Guides',
+        slug: 'fieldguide-generated-guides',
+        iconUrl: `${this.appUrl}/generated-story-icon.png`,
+        siteUrl: `${this.appUrl}/admin/ai`,
+        feedUrl: `${this.appUrl}/generated-stories/feed.xml`,
+        kind: 'custom',
+        status: 'active',
+        sourceType: 'editorial',
+        subjects: ['history', 'art', 'books', 'movies', 'country_knowledge', 'photography', 'nature', 'video'],
+        defaultAudience: 'standard_only',
+        language: 'en',
+        description: 'Admin-approved educational drafts generated from cited source material.'
+      };
+      this.sources.unshift(generatedSource);
+    }
+
+    const firstCitedItem = this.items.find((item) => item.externalUrl === draft.citations[0]?.url);
+    const slugBase = draft.title.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-');
+    const item: ContentItem = {
+      id: `item-${randomUUID()}`,
+      slug: `${slugBase || 'generated-story'}-${randomUUID().slice(0, 8)}`,
+      kind: 'generated_story',
+      sourceId: generatedSource.id,
+      sourceName: generatedSource.name,
+      sourceIconUrl: generatedSource.iconUrl,
+      sourceUrl: generatedSource.siteUrl,
+      authorUsername: draft.requestedBy,
+      publishedAt: now,
+      originalTitle: draft.title,
+      originalSummary: draft.summary,
+      coverImageUrl: firstCitedItem?.coverImageUrl || generatedSource.iconUrl,
+      externalUrl: null,
+      youtubeVideoId: null,
+      subject: draft.subject,
+      subjects: [draft.subject],
+      flags: [],
+      audience: 'standard_only',
+      pinned: false,
+      commentsLocked: false,
+      hiddenByDefault: false,
+      removedAt: null,
+      translations: [
+        {
+          language: 'en',
+          title: draft.title,
+          summary: draft.summary,
+          slug: `${slugBase || 'generated-story'}-en`
+        },
+        {
+          language: 'bg',
+          title: draft.title,
+          summary: draft.summary,
+          slug: `${slugBase || 'generated-story'}-bg`
+        }
+      ],
+      tags: [
+        { id: `tag-${randomUUID()}`, label: draft.subject.replace('_', ' '), type: 'subject', value: draft.subject },
+        { id: `tag-${randomUUID()}`, label: 'Standard', type: 'audience', value: 'standard_only' },
+        { id: `tag-${randomUUID()}`, label: 'AI Draft', type: 'meta', value: 'ai_generated' },
+        { id: `tag-${randomUUID()}`, label: 'Cited Sources', type: 'meta', value: 'cited_sources' }
+      ],
+      bodyMarkdown: `${draft.bodyMarkdown}\n\n## Sources\n${draft.citations.map((citation) => `- [${citation.title}](${citation.url})`).join('\n')}`,
+      ai: {
+        summaryProvider: this.aiConfig.provider,
+        summaryModel: this.aiConfig.summaryModel,
+        translationProvider: this.aiConfig.provider,
+        translationModel: this.aiConfig.translationModel
+      }
+    };
+    this.items.unshift(item);
+    draft.status = 'approved';
+    draft.reviewedBy = username;
+    draft.reviewedAt = now;
+    draft.updatedAt = now;
+    draft.itemId = item.id;
+    return {
+      draft,
+      item
     };
   }
 
