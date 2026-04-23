@@ -717,6 +717,8 @@ export const DEMO_SOURCES: SourceDefinition[] = [
   }
 ];
 
+export const DEFAULT_SOURCE_REGISTRY = DEMO_SOURCES;
+
 export const DEMO_ITEMS: ContentItem[] = [
   {
     id: 'item-sutton-hoo',

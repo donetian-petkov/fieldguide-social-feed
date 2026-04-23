@@ -22,6 +22,7 @@ The project is **not complete** while any major product area is still demo-backe
 ## Latest completed areas
 
 - Admin-only manual AI story generation is now implemented as a non-autopublishing draft flow with cited source packs, verifier scoring, cost tracking on each draft, AI usage ledger entries, and a hard monthly budget cap.
+- Database-mode startup now bootstraps the approved source registry automatically and the worker queues immediate ingestion jobs for every active source at startup, without requiring manual source entry.
 - Database seeding now avoids inserting bundled demo stories by default; MySQL seeds accounts, sources, and config only unless `SEED_DEMO_CONTENT=true` is explicitly supplied.
 - Provider-backed AI execution now powers Ask-AI, ingestion enrichment, translation/classification, and newsletter summaries with budget-aware fallback plus real usage ledger entries.
 - Prisma/MySQL-backed API persistence replaced the runtime demo store when `DEMO_MODE=false`.

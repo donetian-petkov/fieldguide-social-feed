@@ -4,6 +4,7 @@ import type { Queue } from 'bullmq';
 import { PrismaClient, type Prisma } from '@prisma/client';
 import type { AudienceLabel, GeneratedStoryCitation, GeneratedStoryVerification, InterfaceLanguage, ModerationFlag, SubjectTag } from '@edu-feed/shared';
 import {
+  DEFAULT_SOURCE_REGISTRY,
   DEMO_AI_CONFIG,
   audienceLabelSchema,
   estimateCostUsd,
@@ -722,6 +723,84 @@ async function recordSystemError(scope: 'worker' | 'ingestion' | 'email' | 'ai',
       message
     }
   });
+}
+
+async function ensureDefaultSourceRegistry() {
+  for (const source of DEFAULT_SOURCE_REGISTRY) {
+    const existing = await prisma.source.findUnique({
+      where: {
+        id: source.id
+      },
+      include: {
+        feeds: true
+      }
+    });
+    const nextStatus = existing?.status === 'paused' ? 'paused' : source.status;
+
+    if (!existing) {
+      await prisma.source.create({
+        data: {
+          id: source.id,
+          name: source.name,
+          slug: source.slug,
+          iconUrl: source.iconUrl,
+          siteUrl: source.siteUrl,
+          description: source.description,
+          subjectsJson: JSON.stringify(source.subjects),
+          language: source.language,
+          defaultAudience: source.defaultAudience,
+          sourceType: source.sourceType,
+          status: source.status,
+          feeds: {
+            create: {
+              kind: source.kind,
+              feedUrl: source.feedUrl
+            }
+          }
+        }
+      });
+      continue;
+    }
+
+    await prisma.source.update({
+      where: {
+        id: source.id
+      },
+      data: {
+        name: source.name,
+        slug: source.slug,
+        iconUrl: source.iconUrl,
+        siteUrl: source.siteUrl,
+        description: source.description,
+        subjectsJson: JSON.stringify(source.subjects),
+        language: source.language,
+        defaultAudience: source.defaultAudience,
+        sourceType: source.sourceType,
+        status: nextStatus
+      }
+    });
+
+    const primaryFeed = existing.feeds[0];
+    if (primaryFeed) {
+      await prisma.sourceFeed.update({
+        where: {
+          id: primaryFeed.id
+        },
+        data: {
+          kind: source.kind,
+          feedUrl: source.feedUrl
+        }
+      });
+    } else {
+      await prisma.sourceFeed.create({
+        data: {
+          sourceId: source.id,
+          kind: source.kind,
+          feedUrl: source.feedUrl
+        }
+      });
+    }
+  }
 }
 
 async function recordUniqueAiWarning(key: string, message: string) {
@@ -1762,6 +1841,8 @@ async function generateStoryDraft(input: {
 }
 
 export async function bootstrapRecurringJobs(queues: SchedulerQueues) {
+  await ensureDefaultSourceRegistry();
+
   const [feeds, users] = await Promise.all([
     prisma.sourceFeed.findMany({
       where: {
@@ -1789,7 +1870,19 @@ export async function bootstrapRecurringJobs(queues: SchedulerQueues) {
   ]);
 
   await Promise.all(
-    feeds.map((feed) =>
+    feeds.flatMap((feed) => [
+      queues.ingestion.add(
+        `source-startup:${feed.sourceId}`,
+        {
+          sourceId: feed.sourceId,
+          feedUrl: feed.feedUrl
+        },
+        {
+          jobId: `source-startup:${feed.sourceId}`,
+          removeOnComplete: true,
+          removeOnFail: 50
+        }
+      ),
       queues.ingestion.add(
         `source:${feed.sourceId}`,
         {
@@ -1805,7 +1898,7 @@ export async function bootstrapRecurringJobs(queues: SchedulerQueues) {
           removeOnFail: 50
         }
       )
-    )
+    ])
   );
 
   const newsletterRepeatableJobs = await queues.newsletter.getRepeatableJobs();

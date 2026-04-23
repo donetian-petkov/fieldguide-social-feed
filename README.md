@@ -33,14 +33,17 @@ Fieldguide is a full-stack educational social feed for history, art, books, movi
 - Opt-in newsletters with weekly/daily cadence, viewed/saved/hidden preference ranking, AI-assisted item selection, and audit metadata.
 - Admin source CRUD/resync/delete, submission review, item pinning/removal/tagging, user role/suspend controls, AI settings, budget status, and error logs.
 
-## Quick Start: Demo Mode
+## Quick Start: Database Mode
 
-Demo mode is the fastest way to run the full app without MySQL or Redis.
+Database mode is the default run path. It starts MySQL and Redis, boots the approved source registry, and the worker queues immediate ingestion for active RSS, YouTube RSS, and approved adapter-backed sources.
 
 ```bash
 cp .env.example .env
+docker compose up -d
 npm install
-npm run build
+npm run prisma:generate
+npm run prisma:migrate
+npm run seed
 npm run dev
 ```
 
@@ -59,29 +62,23 @@ mila / fieldguide123
 admin / fieldguide123
 ```
 
-## Database Mode
-
-Use database mode when validating Prisma/MySQL persistence, Redis queues, ingestion jobs, and worker scheduling.
-
-```bash
-cp .env.example .env
-# set DEMO_MODE=false in .env
-docker compose up -d
-npm install
-npm run prisma:generate
-npm run prisma:migrate
-npm run seed
-npm run dev
-```
+The default database seed creates accounts and AI config only. The source registry is also bootstrapped automatically by the API and worker at startup. It does not insert demo articles. To intentionally load bundled demo stories into MySQL for UI testing, run `SEED_DEMO_CONTENT=true npm run seed`.
 
 Prisma workspace scripts load the repo-root `.env`, so you do not need to duplicate `DATABASE_URL` inside `apps/api/.env`. The Docker MySQL init script creates both `fieldguide` and `fieldguide_shadow`; Prisma uses the shadow database during `migrate dev`.
-
-The default database seed creates accounts, source registry entries, and AI config only. It does not insert demo articles. To intentionally load bundled demo stories into MySQL for UI testing, run `SEED_DEMO_CONTENT=true npm run seed`.
 
 If you already had a Docker volume from before the shadow database was added, create/grant it once:
 
 ```bash
 docker exec -i fieldguide-mysql mysql -uroot -proot -e "CREATE DATABASE IF NOT EXISTS fieldguide_shadow; GRANT ALL PRIVILEGES ON fieldguide_shadow.* TO 'fieldguide'@'%'; FLUSH PRIVILEGES;"
+```
+
+## Demo Mode
+
+Demo mode is available for UI work without MySQL or Redis. Set `DEMO_MODE=true` in `.env`, then run:
+
+```bash
+npm install
+npm run dev
 ```
 
 Useful service commands:

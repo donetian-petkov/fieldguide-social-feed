@@ -8,10 +8,11 @@ import {
   DEMO_ERROR_LOGS,
   DEMO_ITEMS,
   DEMO_PINNED_ITEMS,
-  DEMO_SOURCES,
   DEMO_SUBMISSIONS,
   DEMO_USERS
 } from '@edu-feed/shared';
+
+import { ensureDefaultSourceRegistry } from '../src/lib/source-registry.js';
 
 const prisma = new PrismaClient();
 const seedDemoContent = process.env.SEED_DEMO_CONTENT === 'true';
@@ -107,29 +108,7 @@ async function main() {
     });
   }
 
-  for (const source of DEMO_SOURCES) {
-    await prisma.source.create({
-      data: {
-        id: source.id,
-        name: source.name,
-        slug: source.slug,
-        iconUrl: source.iconUrl,
-        siteUrl: source.siteUrl,
-        description: source.description,
-        subjectsJson: JSON.stringify(source.subjects),
-        language: source.language,
-        defaultAudience: source.defaultAudience,
-        sourceType: source.sourceType,
-        status: source.status,
-        feeds: {
-          create: {
-            kind: source.kind,
-            feedUrl: source.feedUrl
-          }
-        }
-      }
-    });
-  }
+  await ensureDefaultSourceRegistry(prisma);
 
   await prisma.aiConfig.create({
     data: {

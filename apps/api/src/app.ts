@@ -10,6 +10,7 @@ import { DemoStore } from './lib/demo-store.js';
 import { BullMqAppQueues, NoopQueues, type AppQueues } from './lib/queues.js';
 import type { AppStore } from './lib/store.js';
 import { PrismaStore } from './lib/prisma-store.js';
+import { ensureDefaultSourceRegistry } from './lib/source-registry.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerFeedRoutes } from './routes/feed.js';
@@ -35,6 +36,9 @@ export async function buildApp(options?: {
   const prisma = options?.store || config.DEMO_MODE ? null : new PrismaClient();
   const queues =
     options?.queues || (config.DEMO_MODE ? new NoopQueues() : new BullMqAppQueues(config.REDIS_URL));
+  if (prisma) {
+    await ensureDefaultSourceRegistry(prisma);
+  }
   const store: AppStore =
     options?.store ||
     (config.DEMO_MODE
