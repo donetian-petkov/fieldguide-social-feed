@@ -149,9 +149,9 @@ export function AppShell({
     { href: '/feed/history', label: 'Main feed', icon: <AutoAwesomeRoundedIcon /> },
     { href: '/saved', label: 'Saved', icon: <BookmarkRoundedIcon /> },
     { href: '/community', label: 'Community', icon: <ForumRoundedIcon /> },
-    { href: `/profile/${resolvedViewer.username}`, label: 'Profile', icon: <PersonRoundedIcon /> },
+    ...(isAuthenticated ? [{ href: `/profile/${resolvedViewer.username}`, label: 'Profile', icon: <PersonRoundedIcon /> }] : []),
     { href: '/settings', label: 'Settings', icon: <SettingsRoundedIcon /> },
-    ...(resolvedViewer.role === 'admin' ? [{ href: '/admin', label: 'Admin', icon: <ShieldRoundedIcon /> }] : []),
+    ...(isAuthenticated && resolvedViewer.role === 'admin' ? [{ href: '/admin', label: 'Admin', icon: <ShieldRoundedIcon /> }] : []),
     ...(!isAuthenticated ? [{ href: '/auth', label: 'Login', icon: <PersonRoundedIcon /> }] : [])
   ];
 
@@ -172,9 +172,9 @@ export function AppShell({
         ))}
       </List>
       <Box sx={{ mt: 'auto', borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
-        <Typography variant="subtitle2">{resolvedViewer.displayName}</Typography>
+        <Typography variant="subtitle2">{isAuthenticated ? resolvedViewer.displayName : 'Guest visitor'}</Typography>
         <Typography variant="body2" color="text.secondary">
-          {resolvedViewer.username} • {resolvedViewer.role}
+          {isAuthenticated ? `${resolvedViewer.username} • ${resolvedViewer.role}` : 'Signed out'}
         </Typography>
         <Typography variant="body2" color="text.secondary">
           Mode: {resolvedViewer.contentMode}
@@ -207,7 +207,7 @@ export function AppShell({
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       <AppBar position="fixed" elevation={0} color="transparent" sx={{ backdropFilter: 'blur(12px)', borderBottom: '1px solid', borderColor: 'divider' }}>
         <Toolbar sx={{ gap: 2 }}>
-          <IconButton edge="start" onClick={() => setDrawerOpen(true)}>
+          <IconButton edge="start" aria-label="Open navigation menu" onClick={() => setDrawerOpen(true)}>
             <MenuRoundedIcon />
           </IconButton>
           <Stack sx={{ flex: 1, minWidth: 0 }}>

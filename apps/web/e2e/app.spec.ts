@@ -20,6 +20,18 @@ function feedCardBySlug(page: Page, slug: string) {
     .first();
 }
 
+test('signed-out drawer shows guest account state', async ({ page }) => {
+  await page.goto('/feed/history');
+  await page.getByLabel('Open navigation menu').click();
+
+  const drawer = page.getByRole('presentation').last();
+  await expect(drawer.getByText('Guest visitor')).toBeVisible();
+  await expect(drawer.getByText('Signed out')).toBeVisible();
+  await expect(drawer.getByText('Alex Marin')).toHaveCount(0);
+  await expect(drawer.getByRole('link', { name: 'Profile' })).toHaveCount(0);
+  await expect(drawer.getByRole('link', { name: 'Login', exact: true })).toBeVisible();
+});
+
 test('login opens the history feed and keyboard help dialog', async ({ page }) => {
   await loginAs(page, 'alex');
 
