@@ -51,6 +51,16 @@ test('signed-out settings show sign-in notices instead of locked controls', asyn
   await expect(aiPreferencesCard.getByText('Ask-AI enabled')).toHaveCount(0);
 });
 
+test('signed-out users are prompted before saving stories', async ({ page }) => {
+  await page.goto('/feed/history');
+  await expect(page.locator('a[href="/auth"]').filter({ hasText: 'Sign in to save' }).first()).toBeVisible();
+
+  await page.goto('/saved');
+  await expect(page.getByText('Sign in to save stories and view your saved library.')).toBeVisible();
+  await expect(page.getByText('Saved stories are account-only')).toBeVisible();
+  await expect(page.getByText('Quiet History')).toHaveCount(0);
+});
+
 test('login opens the history feed and keyboard help dialog', async ({ page }) => {
   await loginAs(page, 'alex');
 

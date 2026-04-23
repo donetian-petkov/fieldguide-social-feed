@@ -172,21 +172,23 @@ export function ArticleCard({
               <Button component={Link} href={detailHref} startIcon={<OpenInNewRoundedIcon />} variant="contained">
                 Open story
               </Button>
-              <Button
-                startIcon={<BookmarkBorderRoundedIcon />}
-                variant="outlined"
-                disabled={saveItemState.isLoading}
-                onClick={async () => {
-                  if (!isAuthenticated) {
-                    setToast('Sign in to save articles to albums.');
-                    return;
-                  }
-                  await saveItem(item.id).unwrap().catch(() => undefined);
-                  setToast('Saved to your library.');
-                }}
-              >
-                Save
-              </Button>
+              {!isAuthenticated ? (
+                <Button component={Link} href="/auth" startIcon={<BookmarkBorderRoundedIcon />} variant="outlined">
+                  Sign in to save
+                </Button>
+              ) : (
+                <Button
+                  startIcon={<BookmarkBorderRoundedIcon />}
+                  variant="outlined"
+                  disabled={saveItemState.isLoading}
+                  onClick={async () => {
+                    await saveItem(item.id).unwrap().catch(() => undefined);
+                    setToast('Saved to your library.');
+                  }}
+                >
+                  Save
+                </Button>
+              )}
               <Button
                 startIcon={<IosShareRoundedIcon />}
                 variant="outlined"

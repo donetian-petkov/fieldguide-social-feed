@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import KeyboardDoubleArrowUpRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowUpRounded';
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
-import { Box, Card, CardContent, Fab, Snackbar, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Card, CardContent, Fab, Snackbar, Stack, Typography } from '@mui/material';
 
 import type { ContentItem, SubjectFeed, UserSettingsDto } from '@edu-feed/shared';
 import { resolveTranslation } from '@edu-feed/shared';
@@ -38,13 +38,16 @@ export function FeedScreen({
   const [hiddenIds, setHiddenIds] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const session = useSessionViewer(viewer);
-  const feedQuery = useFeedQuery({ feed });
+  const isSavedGuestView = feed === 'saved' && !session.isAuthenticated;
+  const feedQuery = useFeedQuery({ feed }, { skip: isSavedGuestView });
   const resolvedViewer = session.viewer;
   const resolvedLanguage = resolvedViewer.language as 'en' | 'bg';
   const resolvedLanguageMode = resolvedViewer.contentLanguageMode;
   const resolvedImageMode = resolvedViewer.imageMode;
-  const effectiveItems = feedQuery.data?.items || items;
-  const effectivePinnedItems = feedQuery.data?.pinnedItems || pinnedItems;
+  const fallbackItems = isSavedGuestView ? [] : items;
+  const fallbackPinnedItems = isSavedGuestView ? [] : pinnedItems;
+  const effectiveItems = feedQuery.data?.items || fallbackItems;
+  const effectivePinnedItems = feedQuery.data?.pinnedItems || fallbackPinnedItems;
   const visibleItems = effectiveItems.filter((item) => !hiddenIds.includes(item.id));
 
   return (
@@ -179,7 +182,22 @@ export function FeedScreen({
               />
             ))}
 
-            {!visibleItems.length ? (
+            {isSavedGuestView ? (
+              <Card variant="outlined">
+                <CardContent>
+                  <Stack spacing={2}>
+                    <Alert severity="info">Sign in to save stories and view your saved library.</Alert>
+                    <Typography variant="h6">Saved stories are account-only</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Guests can browse and share stories, but saving requires an account so the library can persist across devices.
+                    </Typography>
+                    <Button component={Link} href="/auth" variant="contained" sx={{ alignSelf: 'flex-start' }}>
+                      Login / Register
+                    </Button>
+                  </Stack>
+                </CardContent>
+              </Card>
+            ) : !visibleItems.length ? (
               <Card variant="outlined">
                 <CardContent>
                   <Typography variant="h6">No items remain in this view</Typography>

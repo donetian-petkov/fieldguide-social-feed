@@ -220,24 +220,26 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
               ) : null}
               <SectionCard title="Save & albums" eyebrow="Personal library">
                 <Stack spacing={1.5}>
-                  <Button
-                    variant="contained"
-                    disabled={!isAuthenticated || saveItemState.isLoading}
-                    onClick={async () => {
-                      if (!isAuthenticated) {
-                        setLibraryMessage('Sign in to save this item.');
-                        return;
-                      }
-                      try {
-                        await saveItem(item.id).unwrap();
-                        setLibraryMessage('Saved to your library.');
-                      } catch (error) {
-                        setLibraryMessage(error instanceof Error ? error.message : 'Could not save this item.');
-                      }
-                    }}
-                  >
-                    {saveItemState.isLoading ? 'Saving...' : 'Save item'}
-                  </Button>
+                  {!isAuthenticated ? (
+                    <Button component={Link} href="/auth" variant="contained">
+                      Sign in to save item
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="contained"
+                      disabled={saveItemState.isLoading}
+                      onClick={async () => {
+                        try {
+                          await saveItem(item.id).unwrap();
+                          setLibraryMessage('Saved to your library.');
+                        } catch (error) {
+                          setLibraryMessage(error instanceof Error ? error.message : 'Could not save this item.');
+                        }
+                      }}
+                    >
+                      {saveItemState.isLoading ? 'Saving...' : 'Save item'}
+                    </Button>
+                  )}
                   {isAuthenticated && albums.length ? (
                     <>
                       <FormControl fullWidth>
