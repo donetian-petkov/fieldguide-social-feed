@@ -1,13 +1,17 @@
 import { getConfig } from './config.js';
 import { buildApp } from './app.js';
 
-const config = getConfig();
-const app = await buildApp({ config });
+async function main() {
+  const config = getConfig();
+  const app = await buildApp({ config });
 
-app.listen({
-  host: '0.0.0.0',
-  port: config.PORT
-}).catch((error) => {
-  app.log.error(error);
+  await app.listen({
+    host: '0.0.0.0',
+    port: config.PORT
+  });
+}
+
+main().catch((error) => {
+  console.error(error);
   process.exit(1);
 });

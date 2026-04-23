@@ -15,16 +15,19 @@ import { QUEUES } from './jobs/types.js';
 const config = getWorkerConfig();
 const logger = pino({ name: 'fieldguide-worker' });
 
-if (config.DEMO_MODE) {
-  logger.info('Worker running in demo mode. Queue workers are not connected to Redis.');
-  logger.info({
-    queues: Object.values(QUEUES)
-  }, 'Available queue names');
+async function main() {
+  if (config.DEMO_MODE) {
+    logger.info('Worker running in demo mode. Queue workers are not connected to Redis.');
+    logger.info({
+      queues: Object.values(QUEUES)
+    }, 'Available queue names');
 
-  setInterval(() => {
-    logger.info('Demo worker heartbeat');
-  }, 30_000);
-} else {
+    setInterval(() => {
+      logger.info('Demo worker heartbeat');
+    }, 30_000);
+    return;
+  }
+
   const connection = new IORedis(config.REDIS_URL, {
     maxRetriesPerRequest: null
   });
@@ -83,3 +86,8 @@ if (config.DEMO_MODE) {
     queues: Object.keys(queues)
   }, 'Worker connected to Redis, scheduled recurring jobs, and processing jobs');
 }
+
+main().catch((error) => {
+  logger.error({ error }, 'Worker failed to start');
+  process.exit(1);
+});
