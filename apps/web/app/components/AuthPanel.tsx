@@ -16,10 +16,10 @@ type AuthMode = 'login' | 'register' | 'forgot' | 'reset';
 export function AuthPanel() {
   const router = useRouter();
   const [mode, setMode] = useState<AuthMode>('login');
-  const [username, setUsername] = useState('alex');
-  const [displayName, setDisplayName] = useState('Alex Marin');
-  const [password, setPassword] = useState('fieldguide123');
-  const [identifier, setIdentifier] = useState('alex');
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [resetToken, setResetToken] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [messageSeverity, setMessageSeverity] = useState<'error' | 'info' | 'success'>('info');
@@ -50,7 +50,7 @@ export function AuthPanel() {
         setMessageSeverity('info');
         setMessage(
           result.previewToken
-            ? `Reset token generated for local testing: ${result.previewToken}`
+            ? `Reset token generated: ${result.previewToken}`
             : 'If the account exists, a reset email was queued.'
         );
         return;
@@ -102,7 +102,7 @@ export function AuthPanel() {
               label="Username or email"
               value={identifier}
               onChange={(event) => setIdentifier(event.target.value)}
-              helperText="The API always responds generically. In local mode it may also return a preview token."
+              helperText="If the account exists, a reset email will be sent."
             />
           ) : null}
 
@@ -112,7 +112,7 @@ export function AuthPanel() {
                 label="Reset token"
                 value={resetToken}
                 onChange={(event) => setResetToken(event.target.value)}
-                helperText="Use the token from email delivery or the local preview token."
+                helperText="Use the reset token from your email."
               />
               <TextField type="password" label="New password" value={password} onChange={(event) => setPassword(event.target.value)} />
             </>
@@ -130,9 +130,6 @@ export function AuthPanel() {
                     : 'Reset password'}
           </Button>
           {message ? <Alert severity={messageSeverity}>{message}</Alert> : null}
-          <Alert severity="info">
-            Demo credentials: `alex / fieldguide123` or `admin / fieldguide123`.
-          </Alert>
         </Stack>
       </CardContent>
     </Card>

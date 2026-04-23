@@ -198,8 +198,8 @@ test('password recovery can issue a reset token and accept a new password', asyn
     await page.getByRole('tab', { name: 'Forgot' }).click();
     await page.getByLabel('Username or email').fill('alex');
     await page.getByRole('button', { name: 'Send reset link' }).click();
-    const message = await page.getByText(/Reset token generated for local testing:/).textContent();
-    const token = message?.match(/Reset token generated for local testing: (reset_[\w-]+)/)?.[1];
+    const message = await page.getByText(/Reset token generated:/).textContent();
+    const token = message?.match(/Reset token generated: (reset_[\w-]+)/)?.[1];
     expect(token).toBeTruthy();
     return token!;
   }
@@ -228,7 +228,7 @@ test('password recovery can issue a reset token and accept a new password', asyn
         await page.getByRole('button', { name: 'Reset password' }).click();
         await expect(page.getByText('Password updated. Sign in with the new password.')).toBeVisible();
       } catch {
-        // Best-effort cleanup so repeated runs keep the seeded demo password intact.
+        // Best-effort cleanup so repeated runs keep the seeded local password intact.
       }
     }
   }
@@ -331,7 +331,7 @@ test('hiding an item persists after refresh for a new account', async ({ page })
   await expect(feedCardBySlug(page, itemSlug)).toHaveCount(0);
 });
 
-test('admin login reaches the live admin dashboard without the fallback warning', async ({ page }) => {
+test('admin login reaches the live admin dashboard without the unavailable warning', async ({ page }) => {
   await loginAs(page, 'admin');
   await page.goto('/admin');
 
@@ -339,7 +339,7 @@ test('admin login reaches the live admin dashboard without the fallback warning'
   await expect(page.getByRole('heading', { name: 'Sources' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Submissions' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Errors' })).toBeVisible();
-  await expect(page.getByText('Admin API unavailable or you are not signed in as an admin. Showing fallback data.')).toHaveCount(0);
+  await expect(page.getByText('Admin data is available only after signing in as an admin and connecting to the API.')).toHaveCount(0);
 });
 
 test('sharing a feed item copies its detail URL', async ({ browser }) => {

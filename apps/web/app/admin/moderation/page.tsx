@@ -7,7 +7,7 @@ import type { ContentItem } from '@edu-feed/shared';
 
 import { AppShell } from '../../components/AppShell';
 import { SectionCard } from '../../components/SectionCard';
-import { getAdminModel } from '../../lib/demo';
+import { DEMO_FALLBACK_ENABLED, getAdminModel, getEmptyAdminModel } from '../../lib/demo';
 import {
   useAdminDashboardQuery,
   useDeleteAdminCommentMutation,
@@ -20,14 +20,10 @@ import {
 import { useSessionViewer } from '../../lib/session';
 
 export default function AdminModerationPage() {
-  const fallback = getAdminModel();
-  const { viewer } = useSessionViewer(fallback.viewer);
+  const fallback = DEMO_FALLBACK_ENABLED ? getAdminModel() : getEmptyAdminModel();
+  const { viewer } = useSessionViewer();
   const adminQuery = useAdminDashboardQuery();
-  const model = adminQuery.data || {
-    ...fallback,
-    items: [],
-    comments: []
-  };
+  const model = adminQuery.data || fallback;
   const [toast, setToast] = useState<string | null>(null);
   const [reviewSubmission] = useReviewSubmissionMutation();
   const [deleteComment] = useDeleteAdminCommentMutation();
@@ -249,7 +245,7 @@ export default function AdminModerationPage() {
           </Box>
         </SectionCard>
       </Box>
-      {adminQuery.isError ? <Alert sx={{ mt: 3 }} severity="warning">Showing fallback moderation data because the admin API is unavailable.</Alert> : null}
+      {adminQuery.isError ? <Alert sx={{ mt: 3 }} severity="warning">Admin moderation data could not be loaded from the API.</Alert> : null}
       <Snackbar open={!!toast} autoHideDuration={2600} message={toast || ''} onClose={() => setToast(null)} />
     </AppShell>
   );

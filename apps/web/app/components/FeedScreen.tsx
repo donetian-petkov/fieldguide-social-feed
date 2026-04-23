@@ -212,7 +212,7 @@ export function FeedScreen({
               <Card variant="outlined">
                 <CardContent>
                   <Typography variant="body2" color="text.secondary">
-                    API feed refresh failed, so the page is showing bundled fallback data.
+                    Feed data could not be loaded from the API. Check the API connection or refresh again.
                   </Typography>
                 </CardContent>
               </Card>

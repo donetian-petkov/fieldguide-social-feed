@@ -19,7 +19,7 @@ Fieldguide is a full-stack educational social feed for history, art, books, movi
 - `apps/web`: Next.js App Router, React, MUI, Redux Toolkit + RTK Query, i18next.
 - `apps/api`: Fastify, secure cookie sessions, Prisma/MySQL persistence, Pino logs.
 - `apps/worker`: BullMQ worker for ingestion, AI enrichment, manual generated-story drafts, newsletter selection, and email jobs.
-- `packages/shared`: Zod schemas, DTOs, source registry, demo fixtures, and shared AI utilities.
+- `packages/shared`: Zod schemas, DTOs, source registry, optional UI fixtures, and shared AI utilities.
 
 ## Implemented Scope
 
@@ -54,15 +54,9 @@ Open:
 
 Use `localhost` consistently for the web and API while testing auth. Browser cookies are host-scoped, so mixing `127.0.0.1:3000` with `localhost:4000` can make the app appear signed out even after a successful login.
 
-Seeded demo logins:
+The default database seed creates local accounts, the source registry, and AI config only. Set `SEED_USER_PASSWORD` in `.env` before running `npm run seed`; the admin username is `admin`. The source registry is also bootstrapped automatically by the API and worker at startup. It does not insert bundled fixture articles.
 
-```text
-alex / fieldguide123
-mila / fieldguide123
-admin / fieldguide123
-```
-
-The default database seed creates accounts and AI config only. The source registry is also bootstrapped automatically by the API and worker at startup. It does not insert demo articles. To intentionally load bundled demo stories into MySQL for UI testing, run `SEED_DEMO_CONTENT=true npm run seed`.
+To intentionally load bundled UI fixtures into MySQL for development screenshots, run `SEED_DEMO_CONTENT=true npm run seed`. To allow the web app to show bundled fixture data when the API is empty or unavailable, set `NEXT_PUBLIC_DEMO_FALLBACK=true`; this is off by default.
 
 Prisma workspace scripts load the repo-root `.env`, so you do not need to duplicate `DATABASE_URL` inside `apps/api/.env`. The Docker MySQL init script creates both `fieldguide` and `fieldguide_shadow`; Prisma uses the shadow database during `migrate dev`.
 
@@ -72,9 +66,9 @@ If you already had a Docker volume from before the shadow database was added, cr
 docker exec -i fieldguide-mysql mysql -uroot -proot -e "CREATE DATABASE IF NOT EXISTS fieldguide_shadow; GRANT ALL PRIVILEGES ON fieldguide_shadow.* TO 'fieldguide'@'%'; FLUSH PRIVILEGES;"
 ```
 
-## Demo Mode
+## Fixture Mode
 
-Demo mode is available for UI work without MySQL or Redis. Set `DEMO_MODE=true` in `.env`, then run:
+Fixture mode is available for isolated UI work without MySQL or Redis. Set `DEMO_MODE=true` and `NEXT_PUBLIC_DEMO_FALLBACK=true` in `.env`, then run:
 
 ```bash
 npm install
@@ -107,14 +101,14 @@ Current automated coverage includes shared schema/source tests, API route tests 
 
 ## Screenshots
 
-Screenshots are reproducible from the built demo app:
+Screenshots are reproducible from the built fixture app:
 
 ```bash
 npm run build
 npm run screenshots
 ```
 
-The capture script starts the built API and web app in demo mode, logs in as seeded users, and writes PNGs to `docs/screenshots`.
+The capture script starts the built API and web app in fixture mode, logs in as seeded local users, and writes PNGs to `docs/screenshots`.
 
 ## Main Routes
 
@@ -126,4 +120,4 @@ The capture script starts the built API and web app in demo mode, logs in as see
 
 - User-facing failures are toast/alert-level only; stack traces and integration failures are logged server-side and surfaced in admin logs.
 - External article/video pages link out to originals and do not republish full scraped bodies; community posts render their own full body.
-- Email and AI providers are configuration-driven. Without real credentials, local/demo flows use safe placeholders or budget-aware fallback behavior.
+- Email and AI providers are configuration-driven. Without real credentials, provider-backed AI controls are hidden or rejected instead of exposing unavailable actions.

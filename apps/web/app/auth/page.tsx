@@ -5,11 +5,11 @@ import { Box, Typography } from '@mui/material';
 import { AppShell } from '../components/AppShell';
 import { AuthPanel } from '../components/AuthPanel';
 import { SectionCard } from '../components/SectionCard';
-import { demoViewer } from '../lib/demo';
+import { guestViewer } from '../lib/demo';
 
 export default function AuthPage() {
   return (
-    <AppShell title="Account" subtitle="Login, register, and unlock protected content controls." viewer={demoViewer}>
+    <AppShell title="Account" subtitle="Login, register, and unlock protected content controls." viewer={guestViewer}>
       <Box
         sx={{
           display: 'grid',

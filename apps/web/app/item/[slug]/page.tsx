@@ -12,7 +12,7 @@ import { AskAiCard } from '../../components/AskAiCard';
 import { ArticleCard } from '../../components/ArticleCard';
 import { ContentImage } from '../../components/ContentImage';
 import { SectionCard } from '../../components/SectionCard';
-import { getItemModel, demoViewer } from '../../lib/demo';
+import { DEMO_FALLBACK_ENABLED, getItemModel, guestViewer } from '../../lib/demo';
 import {
   useAddAlbumItemMutation,
   useAlbumsQuery,
@@ -27,8 +27,8 @@ import { useSessionViewer } from '../../lib/session';
 const COMMENT_EDIT_WINDOW_MS = 15 * 60 * 1000;
 
 export default function ItemPage({ params }: { params: { slug: string } }) {
-  const fallback = getItemModel(params.slug);
-  const { viewer, isAuthenticated } = useSessionViewer(demoViewer);
+  const fallback = DEMO_FALLBACK_ENABLED ? getItemModel(params.slug) : null;
+  const { viewer, isAuthenticated } = useSessionViewer();
   const itemQuery = useItemQuery(params.slug);
   const healthQuery = useHealthQuery();
   const albumsQuery = useAlbumsQuery(undefined, {
@@ -59,9 +59,17 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
     }
   }, [albums, selectedAlbumId]);
 
+  if (itemQuery.isLoading) {
+    return (
+      <AppShell title="Loading item" subtitle="Fetching the article from the API." viewer={viewer}>
+        <Typography variant="body1">Loading article...</Typography>
+      </AppShell>
+    );
+  }
+
   if (!item || !translation) {
     return (
-      <AppShell title="Item not found" subtitle="The requested article or video does not exist in the demo dataset." viewer={demoViewer}>
+      <AppShell title="Item not found" subtitle="The requested article or video could not be loaded." viewer={guestViewer}>
         <Typography variant="body1">Try another item from the main feed.</Typography>
       </AppShell>
     );

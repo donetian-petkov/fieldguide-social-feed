@@ -8,14 +8,14 @@ import { AppShell } from '../../components/AppShell';
 import { ArticleCard } from '../../components/ArticleCard';
 import { ContentImage } from '../../components/ContentImage';
 import { SectionCard } from '../../components/SectionCard';
-import { demoViewer, getAlbumModel, getAlbumCover, getCommentsCountByItem } from '../../lib/demo';
+import { DEMO_FALLBACK_ENABLED, getAlbumModel, getAlbumCover, getCommentsCountByItem } from '../../lib/demo';
 import { useAlbumQuery, useDeleteAlbumMutation, useUpdateAlbumMutation } from '../../lib/api';
 import { useSessionViewer } from '../../lib/session';
 
 export default function AlbumPage({ params }: { params: { id: string } }) {
   const router = useRouter();
-  const fallback = getAlbumModel(params.id);
-  const { viewer, isAuthenticated } = useSessionViewer(demoViewer);
+  const fallback = DEMO_FALLBACK_ENABLED ? getAlbumModel(params.id) : null;
+  const { viewer, isAuthenticated } = useSessionViewer();
   const albumQuery = useAlbumQuery(params.id, {
     skip: !isAuthenticated
   });
@@ -39,7 +39,9 @@ export default function AlbumPage({ params }: { params: { id: string } }) {
   if (!album) {
     return (
       <AppShell title="Album not found" subtitle="This album does not exist in the current library." viewer={viewer}>
-        <Typography variant="body1">Open a saved album from the settings page or saved feed.</Typography>
+        <Typography variant="body1">
+          {isAuthenticated ? 'Open a saved album from the settings page or saved feed.' : 'Sign in to open and manage saved albums.'}
+        </Typography>
       </AppShell>
     );
   }

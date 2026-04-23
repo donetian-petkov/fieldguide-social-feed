@@ -16,6 +16,7 @@ import { ensureDefaultSourceRegistry } from '../src/lib/source-registry.js';
 
 const prisma = new PrismaClient();
 const seedDemoContent = process.env.SEED_DEMO_CONTENT === 'true';
+const seedUserPassword = process.env.SEED_USER_PASSWORD || 'fieldguide123';
 
 function buildDedupeKey(item: { sourceId: string; externalUrl: string | null; originalTitle: string }) {
   return `${item.sourceId}:${item.externalUrl || item.originalTitle}`.slice(0, 191);
@@ -52,7 +53,7 @@ async function main() {
       data: {
         username: user.username,
         email: `${user.username}@example.com`,
-        passwordHash: await argon2.hash('fieldguide123'),
+        passwordHash: await argon2.hash(seedUserPassword),
         role: user.role
       }
     });
@@ -83,7 +84,7 @@ async function main() {
       data: {
         username,
         email: `${username}@example.com`,
-        passwordHash: await argon2.hash('fieldguide123'),
+        passwordHash: await argon2.hash(seedUserPassword),
         role: 'user'
       }
     });

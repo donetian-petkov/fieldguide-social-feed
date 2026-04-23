@@ -4,13 +4,13 @@ import { Alert, Box, Typography } from '@mui/material';
 
 import { AppShell } from '../components/AppShell';
 import { SectionCard } from '../components/SectionCard';
-import { getAdminModel } from '../lib/demo';
+import { DEMO_FALLBACK_ENABLED, getAdminModel, getEmptyAdminModel } from '../lib/demo';
 import { useAdminDashboardQuery } from '../lib/api';
 import { useSessionViewer } from '../lib/session';
 
 export default function AdminPage() {
-  const fallback = getAdminModel();
-  const { viewer } = useSessionViewer(fallback.viewer);
+  const fallback = DEMO_FALLBACK_ENABLED ? getAdminModel() : getEmptyAdminModel();
+  const { viewer } = useSessionViewer();
   const adminQuery = useAdminDashboardQuery();
   const model = adminQuery.data || fallback;
 
@@ -51,7 +51,7 @@ export default function AdminPage() {
           </SectionCard>
         </Box>
       </Box>
-      {adminQuery.isError ? <Alert sx={{ mt: 3 }} severity="warning">Admin API unavailable or you are not signed in as an admin. Showing fallback data.</Alert> : null}
+      {adminQuery.isError ? <Alert sx={{ mt: 3 }} severity="warning">Admin data is available only after signing in as an admin and connecting to the API.</Alert> : null}
     </AppShell>
   );
 }

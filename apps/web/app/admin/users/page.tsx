@@ -6,13 +6,13 @@ import { Alert, Box, Button, FormControl, InputLabel, MenuItem, Select, Snackbar
 
 import { AppShell } from '../../components/AppShell';
 import { SectionCard } from '../../components/SectionCard';
-import { getAdminModel } from '../../lib/demo';
+import { DEMO_FALLBACK_ENABLED, getAdminModel, getEmptyAdminModel } from '../../lib/demo';
 import { useAdminDashboardQuery, useSetAdminUserRoleMutation, useSuspendAdminUserMutation } from '../../lib/api';
 import { useSessionViewer } from '../../lib/session';
 
 export default function AdminUsersPage() {
-  const fallback = getAdminModel();
-  const { viewer } = useSessionViewer(fallback.viewer);
+  const fallback = DEMO_FALLBACK_ENABLED ? getAdminModel() : getEmptyAdminModel();
+  const { viewer } = useSessionViewer();
   const adminQuery = useAdminDashboardQuery();
   const model = adminQuery.data || fallback;
   const [toast, setToast] = useState<string | null>(null);
@@ -107,7 +107,7 @@ export default function AdminUsersPage() {
           );
         })}
       </Box>
-      {adminQuery.isError ? <Alert sx={{ mt: 3 }} severity="warning">Showing fallback user data because the admin API is unavailable.</Alert> : null}
+      {adminQuery.isError ? <Alert sx={{ mt: 3 }} severity="warning">Admin user data could not be loaded from the API.</Alert> : null}
       <Snackbar open={!!toast} autoHideDuration={2400} message={toast || ''} onClose={() => setToast(null)} />
     </AppShell>
   );

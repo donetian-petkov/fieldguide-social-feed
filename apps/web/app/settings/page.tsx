@@ -10,7 +10,7 @@ import { PRESET_FONT_STACKS } from '@edu-feed/shared';
 import { AppShell } from '../components/AppShell';
 import { ProtectedModeCard } from '../components/ProtectedModeCard';
 import { SectionCard } from '../components/SectionCard';
-import { getSavedAlbumsForViewer, getSettingsModel } from '../lib/demo';
+import { guestViewer } from '../lib/demo';
 import { useAlbumsQuery, useCreateAlbumMutation, useDeleteAlbumMutation, useHealthQuery, useUpdateSettingsMutation } from '../lib/api';
 import { useSessionViewer } from '../lib/session';
 
@@ -43,8 +43,7 @@ function SignInRequiredNotice({ text }: { text: string }) {
 }
 
 export default function SettingsPage() {
-  const model = getSettingsModel();
-  const { viewer, isAuthenticated } = useSessionViewer(model.viewer);
+  const { viewer, isAuthenticated } = useSessionViewer(guestViewer);
   const albumsQuery = useAlbumsQuery(undefined, { skip: !isAuthenticated });
   const healthQuery = useHealthQuery();
   const [updateSettings] = useUpdateSettingsMutation();
@@ -54,7 +53,7 @@ export default function SettingsPage() {
   const [messageSeverity, setMessageSeverity] = useState<'success' | 'error'>('success');
   const [albumTitle, setAlbumTitle] = useState('');
   const [albumDescription, setAlbumDescription] = useState('');
-  const albums = albumsQuery.data?.albums || getSavedAlbumsForViewer();
+  const albums = albumsQuery.data?.albums || [];
   const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
 
   async function saveSettings(
@@ -241,7 +240,7 @@ export default function SettingsPage() {
             ) : (
               <>
                 <Typography variant="body2" color="text.secondary">
-                  Saved items: {model.savedCount}
+                  Saved items are available in the Saved feed. Albums here are loaded from your account.
                 </Typography>
                 <Stack spacing={1.5} sx={{ mt: 2 }}>
                   {albums.map((album) => (

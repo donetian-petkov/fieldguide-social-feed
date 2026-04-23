@@ -7,7 +7,7 @@ import { AppShell } from '../components/AppShell';
 import { ArticleCard } from '../components/ArticleCard';
 import { FeedToolbar } from '../components/FeedToolbar';
 import { SectionCard } from '../components/SectionCard';
-import { getCommentsCountByItem, getFeedModel } from '../lib/demo';
+import { DEMO_FALLBACK_ENABLED, getCommentsCountByItem, getFeedModel } from '../lib/demo';
 import { useCreateSubmissionMutation, useFeedQuery } from '../lib/api';
 import { useSessionViewer } from '../lib/session';
 
@@ -15,7 +15,7 @@ type SubmissionType = 'link' | 'community_post';
 
 export default function CommunityPage() {
   const fallback = getFeedModel('community');
-  const { viewer, isAuthenticated } = useSessionViewer(fallback.viewer);
+  const { viewer, isAuthenticated } = useSessionViewer();
   const feedQuery = useFeedQuery({ feed: 'community' });
   const [createSubmission, createSubmissionState] = useCreateSubmissionMutation();
   const [submissionType, setSubmissionType] = useState<SubmissionType>('link');
@@ -23,7 +23,7 @@ export default function CommunityPage() {
   const [sourceUrl, setSourceUrl] = useState('');
   const [body, setBody] = useState('');
   const [message, setMessage] = useState<string | null>(null);
-  const items = feedQuery.data?.items || fallback.items;
+  const items = feedQuery.data?.items || (DEMO_FALLBACK_ENABLED ? fallback.items : []);
 
   return (
     <AppShell
@@ -125,7 +125,7 @@ export default function CommunityPage() {
 
         {feedQuery.isError ? (
           <Box>
-            <Alert severity="warning">Community refresh failed, so the page is showing fallback data.</Alert>
+            <Alert severity="warning">Community feed data could not be loaded from the API.</Alert>
           </Box>
         ) : null}
       </Stack>

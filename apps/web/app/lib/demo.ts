@@ -3,6 +3,7 @@ import type {
   CommentDto,
   ContentItem,
   ContentMode,
+  GeneratedStoryDraftDto,
   InterfaceLanguage,
   SubjectFeed,
   UserSettingsDto
@@ -18,6 +19,7 @@ import {
   DEMO_SOURCES,
   DEMO_SUBMISSIONS,
   DEMO_USERS,
+  PRESET_FONT_STACKS,
   SUBJECT_FEED_LABELS,
   filterItemsForFeed,
   resolveTranslation
@@ -27,6 +29,27 @@ const SAVED_BY_USER: Record<string, string[]> = {
   alex: ['item-sutton-hoo', 'item-book-riot', 'item-bulgaria'],
   admin: ['item-vermeer', 'item-nature'],
   mila: ['item-community']
+};
+
+export const DEMO_FALLBACK_ENABLED =
+  process.env.NEXT_PUBLIC_DEMO_FALLBACK === 'true' || process.env.NEXT_PUBLIC_ENABLE_DEMO_FALLBACK === 'true';
+
+export const guestViewer: UserSettingsDto = {
+  username: 'guest',
+  displayName: 'Guest visitor',
+  role: 'user',
+  language: 'en',
+  contentLanguageMode: 'single',
+  vibePreset: 'museum',
+  fontFamily: PRESET_FONT_STACKS.museum,
+  fontScale: 'md',
+  imageMode: 'on',
+  themeMode: 'light',
+  contentMode: 'standard',
+  newsletterEnabled: false,
+  newsletterCadence: 'weekly',
+  askAiEnabled: false,
+  protectedModeEnabled: true
 };
 
 export const demoViewer = DEMO_USERS.find((user) => user.username === 'alex') as UserSettingsDto;
@@ -57,15 +80,25 @@ export function normalizeFeedSegment(segment?: string): SubjectFeed {
   return 'history';
 }
 
-export function getFeedModel(feed: SubjectFeed, options?: { language?: InterfaceLanguage; mode?: ContentMode; viewer?: UserSettingsDto }) {
-  const viewer = options?.viewer || demoViewer;
+export function getFeedModel(
+  feed: SubjectFeed,
+  options?: { language?: InterfaceLanguage; mode?: ContentMode; viewer?: UserSettingsDto; includeFixtureContent?: boolean }
+) {
+  const includeFixtureContent = options?.includeFixtureContent ?? DEMO_FALLBACK_ENABLED;
+  const viewer = options?.viewer || (DEMO_FALLBACK_ENABLED ? demoViewer : guestViewer);
   const language = options?.language || viewer.language;
   const mode = options?.mode || viewer.contentMode;
   const savedIds = SAVED_BY_USER[viewer.username] || [];
-  const items = feed === 'saved' ? DEMO_ITEMS.filter((item) => savedIds.includes(item.id)) : filterItemsForFeed(DEMO_ITEMS, feed, mode);
-  const pinnedItems = DEMO_PINNED_ITEMS.filter((entry) => entry.feed === feed)
-    .map((entry) => DEMO_ITEMS.find((item) => item.id === entry.itemId))
-    .filter(Boolean) as ContentItem[];
+  const items = includeFixtureContent
+    ? feed === 'saved'
+      ? DEMO_ITEMS.filter((item) => savedIds.includes(item.id))
+      : filterItemsForFeed(DEMO_ITEMS, feed, mode)
+    : [];
+  const pinnedItems = includeFixtureContent
+    ? DEMO_PINNED_ITEMS.filter((entry) => entry.feed === feed)
+      .map((entry) => DEMO_ITEMS.find((item) => item.id === entry.itemId))
+      .filter(Boolean) as ContentItem[]
+    : [];
 
   return {
     feed,
@@ -130,6 +163,21 @@ export function getAdminModel() {
     aiUsage: DEMO_AI_USAGE,
     generatedStories: [],
     users: DEMO_USERS
+  };
+}
+
+export function getEmptyAdminModel() {
+  return {
+    viewer: guestViewer,
+    sources: [],
+    submissions: [],
+    items: [] as ContentItem[],
+    comments: [] as CommentDto[],
+    errorLogs: [],
+    aiConfig: DEMO_AI_CONFIG,
+    aiUsage: [],
+    generatedStories: [] as GeneratedStoryDraftDto[],
+    users: [] as UserSettingsDto[]
   };
 }
 

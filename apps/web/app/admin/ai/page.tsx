@@ -19,7 +19,7 @@ import type { AiModelConfig, GeneratedStoryDraftDto, SubjectTag } from '@edu-fee
 
 import { AppShell } from '../../components/AppShell';
 import { SectionCard } from '../../components/SectionCard';
-import { getAdminModel } from '../../lib/demo';
+import { DEMO_FALLBACK_ENABLED, getAdminModel, getEmptyAdminModel } from '../../lib/demo';
 import {
   useAdminDashboardQuery,
   useHealthQuery,
@@ -49,8 +49,8 @@ function draftStatusCopy(draft: GeneratedStoryDraftDto) {
 }
 
 export default function AdminAiPage() {
-  const fallback = getAdminModel();
-  const { viewer } = useSessionViewer(fallback.viewer);
+  const fallback = DEMO_FALLBACK_ENABLED ? getAdminModel() : getEmptyAdminModel();
+  const { viewer } = useSessionViewer();
   const adminQuery = useAdminDashboardQuery();
   const healthQuery = useHealthQuery();
   const [updateAiConfig, updateState] = useUpdateAiConfigMutation();
@@ -313,7 +313,7 @@ export default function AdminAiPage() {
       </Box>
       {adminQuery.isError ? (
         <Alert sx={{ mt: 3 }} severity="warning">
-          Showing fallback AI settings because the admin API is unavailable.
+          Admin AI settings could not be loaded from the API.
         </Alert>
       ) : null}
       <Snackbar open={!!toast} autoHideDuration={2600} message={toast || ''} onClose={() => setToast(null)} />
