@@ -32,6 +32,25 @@ test('signed-out drawer shows guest account state', async ({ page }) => {
   await expect(drawer.getByRole('link', { name: 'Login', exact: true })).toBeVisible();
 });
 
+test('signed-out settings show sign-in notices instead of locked controls', async ({ page }) => {
+  await page.goto('/settings');
+
+  await expect(page.getByText('You are signed out. Settings below are account preferences')).toBeVisible();
+
+  const appearanceCard = sectionCard(page, 'Appearance');
+  await expect(appearanceCard.getByText('Sign in to change language')).toBeVisible();
+  await expect(appearanceCard.getByLabel('Interface language')).toHaveCount(0);
+  await expect(appearanceCard.getByRole('link', { name: 'Sign in' })).toBeVisible();
+
+  const savedLibraryCard = sectionCard(page, 'Saved library');
+  await expect(savedLibraryCard.getByText('Sign in to view your saved items')).toBeVisible();
+  await expect(savedLibraryCard.getByLabel('Album title')).toHaveCount(0);
+
+  const aiPreferencesCard = sectionCard(page, 'AI preferences');
+  await expect(aiPreferencesCard.getByText('Sign in to change Ask-AI')).toBeVisible();
+  await expect(aiPreferencesCard.getByText('Ask-AI enabled')).toHaveCount(0);
+});
+
 test('login opens the history feed and keyboard help dialog', async ({ page }) => {
   await loginAs(page, 'alex');
 
