@@ -1,0 +1,331 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { DEMO_SOURCES } from '@edu-feed/shared';
+
+import { buildApp } from './app.js';
+import type { AppConfig } from './config.js';
+import { DemoStore } from './lib/demo-store.js';
+import type { AppQueues } from './lib/queues.js';
+
+class TrackingStore extends DemoStore {
+  public recordedViews: Array<{ username: string; itemId: string }> = [];
+
+  override recordItemView(username: string, itemId: string) {
+    this.recordedViews.push({ username, itemId });
+    return super.recordItemView(username, itemId);
+  }
+}
+
+class TrackingQueues implements AppQueues {
+  public scheduledSources: Array<{ sourceId: string; feedUrl: string; pollIntervalSec?: number }> = [];
+
+  public syncedNewsletters: Array<{ username: string; enabled: boolean; mode?: 'weekly' | 'daily' }> = [];
+
+  async scheduleSource(sourceId: string, feedUrl: string, pollIntervalSec?: number) {
+    this.scheduledSources.push({ sourceId, feedUrl, pollIntervalSec });
+  }
+
+  async runSourceResync() {}
+
+  async removeSourceSchedule() {}
+
+  async scheduleNewsletter() {}
+
+  async syncNewsletterSchedule(username: string, enabled: boolean, mode?: 'weekly' | 'daily') {
+    this.syncedNewsletters.push({ username, enabled, mode });
+  }
+
+  async close() {}
+}
+
+const testConfig: AppConfig = {
+  NODE_ENV: 'test',
+  PORT: 4000,
+  APP_URL: 'http://localhost:3000',
+  DATABASE_URL: 'mysql://fieldguide:fieldguide@127.0.0.1:3306/fieldguide',
+  REDIS_URL: 'redis://127.0.0.1:6379',
+  COOKIE_SECRET: 'replace-with-a-long-random-string',
+  SESSION_TTL_HOURS: 168,
+  MODE_SWITCH_TTL_MINUTES: 10,
+  DEMO_MODE: true,
+  DEFAULT_AI_PROVIDER: 'openai',
+  SUMMARY_MODEL: 'gpt-4.1-mini',
+  TRANSLATION_MODEL: 'gpt-4.1-mini',
+  ASK_MODEL: 'gpt-4.1-mini',
+  NEWSLETTER_MODEL: 'gpt-4.1-mini',
+  OPENAI_API_KEY: '',
+  ANTHROPIC_API_KEY: '',
+  OPENROUTER_API_KEY: '',
+  ENABLE_EMAIL: false
+};
+
+function createHarness() {
+  const store = new TrackingStore({
+    sessionTtlHours: testConfig.SESSION_TTL_HOURS,
+    modeSwitchTtlMinutes: testConfig.MODE_SWITCH_TTL_MINUTES,
+    appUrl: testConfig.APP_URL
+  });
+  const queues = new TrackingQueues();
+  return { store, queues };
+}
+
+function readCookie(response: { headers: Record<string, string | string[] | number | undefined> }) {
+  const header = response.headers['set-cookie'];
+  const first = Array.isArray(header) ? header[0] : header;
+  assert.ok(first, 'expected set-cookie header');
+  if (typeof first !== 'string') {
+    throw new Error('Expected set-cookie header to be a string.');
+  }
+  return first.split(';')[0];
+}
+
+async function login(app: Awaited<ReturnType<typeof buildApp>>, username: string, password: string) {
+  const response = await app.inject({
+    method: 'POST',
+    url: '/v1/auth/login',
+    payload: { username, password }
+  });
+
+  assert.equal(response.statusCode, 200);
+  return readCookie(response);
+}
+
+test('register creates a session cookie and exposes the new user through /v1/me', async () => {
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    const registerResponse = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/register',
+      payload: {
+        username: 'iris',
+        displayName: 'Iris Vale',
+        password: 'fieldguide123'
+      }
+    });
+
+    assert.equal(registerResponse.statusCode, 200);
+    const cookie = readCookie(registerResponse);
+
+    const meResponse = await app.inject({
+      method: 'GET',
+      url: '/v1/me',
+      headers: {
+        cookie
+      }
+    });
+
+    assert.equal(meResponse.statusCode, 200);
+    const body = meResponse.json();
+    assert.equal(body.user.username, 'iris');
+    assert.equal(body.user.displayName, 'Iris Vale');
+  } finally {
+    await app.close();
+  }
+});
+
+test('item detail records a view for the signed-in user', async () => {
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    const cookie = await login(app, 'alex', 'fieldguide123');
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/items/item-sutton-hoo',
+      headers: {
+        cookie
+      }
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(store.recordedViews.at(-1), {
+      username: 'alex',
+      itemId: 'item-sutton-hoo'
+    });
+  } finally {
+    await app.close();
+  }
+});
+
+test('settings updates sync the newsletter schedule when cadence changes', async () => {
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    const cookie = await login(app, 'alex', 'fieldguide123');
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/v1/me/settings',
+      headers: {
+        cookie
+      },
+      payload: {
+        newsletterEnabled: true,
+        newsletterCadence: 'daily'
+      }
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(queues.syncedNewsletters.at(-1), {
+      username: 'alex',
+      enabled: true,
+      mode: 'daily'
+    });
+  } finally {
+    await app.close();
+  }
+});
+
+test('protected content-mode switch requires password verification', async () => {
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    const cookie = await login(app, 'alex', 'fieldguide123');
+
+    const denied = await app.inject({
+      method: 'POST',
+      url: '/v1/account/content-mode/switch',
+      headers: {
+        cookie
+      },
+      payload: {
+        nextMode: 'adult'
+      }
+    });
+
+    assert.equal(denied.statusCode, 400);
+
+    const allowed = await app.inject({
+      method: 'POST',
+      url: '/v1/account/content-mode/switch',
+      headers: {
+        cookie
+      },
+      payload: {
+        nextMode: 'adult',
+        password: 'fieldguide123'
+      }
+    });
+
+    assert.equal(allowed.statusCode, 200);
+    assert.equal(allowed.json().nextMode, 'adult');
+  } finally {
+    await app.close();
+  }
+});
+
+test('admin routes reject non-admin users and schedule new sources for ingestion', async () => {
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    const userCookie = await login(app, 'alex', 'fieldguide123');
+    const forbidden = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/dashboard',
+      headers: {
+        cookie: userCookie
+      }
+    });
+
+    assert.equal(forbidden.statusCode, 403);
+
+    const adminCookie = await login(app, 'admin', 'fieldguide123');
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/sources',
+      headers: {
+        cookie: adminCookie
+      },
+      payload: {
+        ...DEMO_SOURCES.find((source) => source.id === 'src-geography-now'),
+        name: 'Test Channel',
+        slug: 'test-channel',
+        siteUrl: 'https://example.com/channel',
+        iconUrl: 'https://example.com/icon.png',
+        feedUrl: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCtestchannel1234567890',
+        id: undefined
+      }
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(queues.scheduledSources.length, 1);
+    assert.equal(queues.scheduledSources[0]?.feedUrl, 'https://www.youtube.com/feeds/videos.xml?channel_id=UCtestchannel1234567890');
+  } finally {
+    await app.close();
+  }
+});
+
+test('approved community submissions appear in the community feed and author profile', async () => {
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    const title = `API Community ${Date.now()}`;
+    const userCookie = await login(app, 'mila', 'fieldguide123');
+    const adminCookie = await login(app, 'admin', 'fieldguide123');
+
+    const submitResponse = await app.inject({
+      method: 'POST',
+      url: '/v1/submissions',
+      headers: {
+        cookie: userCookie
+      },
+      payload: {
+        type: 'community_post',
+        title,
+        body: 'An approval-flow test post.'
+      }
+    });
+
+    assert.equal(submitResponse.statusCode, 200);
+    const submissionId = submitResponse.json().submission.id as string;
+
+    const approveResponse = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/submissions/${submissionId}/review`,
+      headers: {
+        cookie: adminCookie
+      },
+      payload: {
+        decision: 'approved'
+      }
+    });
+
+    assert.equal(approveResponse.statusCode, 200);
+    const approvedItem = approveResponse.json().item as { slug: string; originalTitle: string } | null;
+    assert.ok(approvedItem);
+
+    const communityFeedResponse = await app.inject({
+      method: 'GET',
+      url: '/v1/feed?feed=community'
+    });
+
+    assert.equal(communityFeedResponse.statusCode, 200);
+    assert.equal(
+      communityFeedResponse
+        .json()
+        .items.some((item: { slug: string }) => item.slug === approvedItem?.slug),
+      true
+    );
+
+    const profileResponse = await app.inject({
+      method: 'GET',
+      url: '/v1/profile/mila'
+    });
+
+    assert.equal(profileResponse.statusCode, 200);
+    assert.equal(
+      profileResponse
+        .json()
+        .items.some((item: { slug: string }) => item.slug === approvedItem?.slug),
+      true
+    );
+  } finally {
+    await app.close();
+  }
+});

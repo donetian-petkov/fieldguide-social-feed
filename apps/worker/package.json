@@ -6,7 +6,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "test": "node -e \"console.log('worker tests require installed dependencies and Redis')\""
+    "test": "node --import tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@edu-feed/shared": "0.1.0",

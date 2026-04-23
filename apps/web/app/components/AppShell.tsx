@@ -2,7 +2,7 @@
 
 import { PropsWithChildren, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
@@ -29,12 +29,30 @@ import {
   Typography
 } from '@mui/material';
 
-import type { UserSettingsDto } from '@edu-feed/shared';
+import type { SubjectFeed, UserSettingsDto } from '@edu-feed/shared';
 
 import { useLogoutMutation } from '../lib/api';
+import { FEED_ORDER, normalizeFeedSegment } from '../lib/demo';
 import { useSessionViewer } from '../lib/session';
 
 const DRAWER_WIDTH = 280;
+
+function isTypingTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  const tagName = target.tagName.toLowerCase();
+  return target.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select';
+}
+
+function currentFeedFromPathname(pathname: string): SubjectFeed {
+  if (pathname === '/saved') return 'saved';
+  if (pathname === '/community') return 'community';
+  if (pathname.startsWith('/feed/')) {
+    return normalizeFeedSegment(pathname.split('/')[2]);
+  }
+  return 'history';
+}
 
 export function AppShell({
   title,
@@ -43,6 +61,7 @@ export function AppShell({
   children
 }: PropsWithChildren<{ title: string; subtitle: string; viewer: UserSettingsDto }>) {
   const router = useRouter();
+  const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const { viewer: resolvedViewer, isAuthenticated } = useSessionViewer(viewer);
@@ -50,12 +69,81 @@ export function AppShell({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === '?') setHelpOpen(true);
-      if (event.key === 'Escape') setHelpOpen(false);
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+      if (event.key === 'Escape') {
+        setHelpOpen(false);
+        setDrawerOpen(false);
+        return;
+      }
+      if (isTypingTarget(event.target)) {
+        return;
+      }
+      if (event.key === '?') {
+        event.preventDefault();
+        setHelpOpen(true);
+        return;
+      }
+      if (event.key === 'r' || event.key === 'R') {
+        event.preventDefault();
+        router.refresh();
+        return;
+      }
+      if (event.key === 't' || event.key === 'T') {
+        event.preventDefault();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      if (event.key === 's' || event.key === 'S') {
+        event.preventDefault();
+        router.push('/saved');
+        return;
+      }
+      if (event.key === 'c' || event.key === 'C') {
+        event.preventDefault();
+        router.push('/community');
+        return;
+      }
+      if (event.key === '[' || event.key === ']') {
+        event.preventDefault();
+        const currentFeed = currentFeedFromPathname(pathname);
+        const currentIndex = FEED_ORDER.indexOf(currentFeed);
+        const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+        const nextIndex =
+          event.key === '['
+            ? (safeIndex - 1 + FEED_ORDER.length) % FEED_ORDER.length
+            : (safeIndex + 1) % FEED_ORDER.length;
+        const targetFeed = FEED_ORDER[nextIndex] || 'history';
+        if (targetFeed === 'saved') {
+          router.push('/saved');
+          return;
+        }
+        if (targetFeed === 'community') {
+          router.push('/community');
+          return;
+        }
+        router.push(`/feed/${targetFeed}`);
+        return;
+      }
+      if (event.key === 'a' || event.key === 'A') {
+        event.preventDefault();
+        const visibleInput = document.querySelector('[data-ask-ai-input]') as HTMLElement | null;
+        if (visibleInput) {
+          visibleInput.focus();
+          visibleInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+        const toggle = document.querySelector('[data-ask-ai-toggle]') as HTMLElement | null;
+        if (toggle) {
+          toggle.click();
+          toggle.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [pathname, router]);
 
   const navItems = [
     { href: '/feed/history', label: 'Main feed', icon: <AutoAwesomeRoundedIcon /> },

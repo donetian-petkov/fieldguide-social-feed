@@ -24,6 +24,7 @@ async function main() {
   await prisma.album.deleteMany();
   await prisma.savedItem.deleteMany();
   await prisma.hiddenItem.deleteMany();
+  await prisma.itemView.deleteMany();
   await prisma.comment.deleteMany();
   await prisma.contentTag.deleteMany();
   await prisma.contentTranslation.deleteMany();
@@ -66,6 +67,7 @@ async function main() {
         themeMode: user.themeMode,
         contentMode: user.contentMode,
         newsletterEnabled: user.newsletterEnabled,
+        newsletterCadence: user.newsletterCadence,
         askAiEnabled: user.askAiEnabled,
         protectedModeEnabled: user.protectedModeEnabled
       }
@@ -96,6 +98,7 @@ async function main() {
         themeMode: 'light',
         contentMode: 'standard',
         newsletterEnabled: false,
+        newsletterCadence: 'weekly',
         askAiEnabled: true,
         protectedModeEnabled: true
       }
@@ -165,6 +168,26 @@ async function main() {
       }
     });
   }
+
+  await prisma.itemView.createMany({
+    data: [
+      {
+        userId: userIds.get('alex')!,
+        itemId: 'item-sutton-hoo',
+        viewCount: 2
+      },
+      {
+        userId: userIds.get('alex')!,
+        itemId: 'item-vermeer',
+        viewCount: 1
+      },
+      {
+        userId: userIds.get('admin')!,
+        itemId: 'item-nature',
+        viewCount: 1
+      }
+    ]
+  });
 
   for (const comment of DEMO_COMMENTS) {
     await prisma.comment.create({

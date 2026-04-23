@@ -35,6 +35,11 @@ type ItemResponse = {
   comments: CommentDto[];
 };
 
+type AlbumDetailResponse = {
+  album: AlbumDto;
+  items: ContentItem[];
+};
+
 type ProfileResponse = {
   username: string;
   items: ContentItem[];
@@ -93,6 +98,44 @@ export const fieldguideApi = createApi({
       query: () => '/v1/albums',
       providesTags: ['Albums']
     }),
+    album: builder.query<AlbumDetailResponse, string>({
+      query: (albumId) => `/v1/albums/${albumId}`,
+      providesTags: (_result, _error, albumId) => [{ type: 'Albums', id: albumId }]
+    }),
+    createAlbum: builder.mutation<{ album: AlbumDto }, { title: string; description: string }>({
+      query: (body) => ({
+        url: '/v1/albums',
+        method: 'POST',
+        body
+      }),
+      invalidatesTags: ['Albums']
+    }),
+    updateAlbum: builder.mutation<
+      { album: AlbumDto },
+      { albumId: string; patch: Partial<Pick<AlbumDto, 'title' | 'description' | 'coverItemId' | 'itemIds'>> }
+    >({
+      query: ({ albumId, patch }) => ({
+        url: `/v1/albums/${albumId}`,
+        method: 'PATCH',
+        body: patch
+      }),
+      invalidatesTags: (_result, _error, { albumId }) => ['Albums', { type: 'Albums', id: albumId }]
+    }),
+    deleteAlbum: builder.mutation<{ ok: boolean }, string>({
+      query: (albumId) => ({
+        url: `/v1/albums/${albumId}`,
+        method: 'DELETE'
+      }),
+      invalidatesTags: ['Albums']
+    }),
+    addAlbumItem: builder.mutation<{ album: AlbumDto }, { albumId: string; itemId: string }>({
+      query: ({ albumId, itemId }) => ({
+        url: `/v1/albums/${albumId}/items`,
+        method: 'POST',
+        body: { itemId }
+      }),
+      invalidatesTags: (_result, _error, { albumId }) => ['Albums', { type: 'Albums', id: albumId }]
+    }),
     adminDashboard: builder.query<AdminDashboardResponse, void>({
       query: () => '/v1/admin/dashboard',
       providesTags: ['Admin']
@@ -105,10 +148,33 @@ export const fieldguideApi = createApi({
       }),
       invalidatesTags: ['Admin']
     }),
+    updateSource: builder.mutation<{ source: SourceDefinition }, { sourceId: string; patch: Partial<Omit<SourceDefinition, 'id'>> }>({
+      query: ({ sourceId, patch }) => ({
+        url: `/v1/admin/sources/${sourceId}`,
+        method: 'PATCH',
+        body: patch
+      }),
+      invalidatesTags: ['Admin']
+    }),
+    deleteSource: builder.mutation<{ ok: boolean }, string>({
+      query: (sourceId) => ({
+        url: `/v1/admin/sources/${sourceId}`,
+        method: 'DELETE'
+      }),
+      invalidatesTags: ['Admin', 'Feed', 'Item', 'Profile']
+    }),
     resyncSource: builder.mutation<{ ok: boolean }, string>({
       query: (sourceId) => ({
         url: `/v1/admin/sources/${sourceId}/resync`,
         method: 'POST'
+      }),
+      invalidatesTags: ['Admin']
+    }),
+    updateAiConfig: builder.mutation<{ config: AiModelConfig }, Partial<AiModelConfig>>({
+      query: (body) => ({
+        url: '/v1/admin/ai/config',
+        method: 'PUT',
+        body
       }),
       invalidatesTags: ['Admin']
     }),
@@ -147,6 +213,14 @@ export const fieldguideApi = createApi({
       }),
       invalidatesTags: ['Admin', 'Feed', 'Item', 'Profile']
     }),
+    pinAdminItem: builder.mutation<{ item: ContentItem }, { itemId: string; slot: number }>({
+      query: ({ itemId, slot }) => ({
+        url: `/v1/admin/items/${itemId}/pin`,
+        method: 'POST',
+        body: { slot }
+      }),
+      invalidatesTags: ['Admin', 'Feed', 'Item']
+    }),
     lockAdminItemComments: builder.mutation<{ item: ContentItem }, { itemId: string; locked: boolean }>({
       query: ({ itemId, locked }) => ({
         url: `/v1/admin/items/${itemId}/lock-comments`,
@@ -160,6 +234,14 @@ export const fieldguideApi = createApi({
         url: `/v1/admin/users/${username}/suspend`,
         method: 'POST',
         body: { suspended }
+      }),
+      invalidatesTags: ['Admin']
+    }),
+    setAdminUserRole: builder.mutation<{ user: UserSettingsDto }, { username: string; role: UserSettingsDto['role'] }>({
+      query: ({ username, role }) => ({
+        url: `/v1/admin/users/${username}/role`,
+        method: 'POST',
+        body: { role }
       }),
       invalidatesTags: ['Admin']
     }),
@@ -178,6 +260,20 @@ export const fieldguideApi = createApi({
         body
       }),
       invalidatesTags: ['Me', 'Albums']
+    }),
+    forgotPassword: builder.mutation<{ ok: boolean; previewToken: string | null }, { identifier: string }>({
+      query: (body) => ({
+        url: '/v1/auth/forgot-password',
+        method: 'POST',
+        body
+      })
+    }),
+    resetPassword: builder.mutation<{ ok: boolean }, { token: string; password: string }>({
+      query: (body) => ({
+        url: '/v1/auth/reset-password',
+        method: 'POST',
+        body
+      })
     }),
     logout: builder.mutation<{ ok: boolean }, void>({
       query: () => ({
@@ -236,10 +332,29 @@ export const fieldguideApi = createApi({
         body
       })
     }),
+    createSubmission: builder.mutation<
+      { submission: SubmissionDto },
+      { type: 'link' | 'community_post'; title: string; sourceUrl?: string | null; body?: string | null }
+    >({
+      query: (body) => ({
+        url: '/v1/submissions',
+        method: 'POST',
+        body
+      }),
+      invalidatesTags: ['Admin', 'Feed', 'Profile']
+    }),
     createComment: builder.mutation<{ comment: CommentDto }, { itemId: string; body: string }>({
       query: ({ itemId, body }) => ({
         url: `/v1/items/${itemId}/comments`,
         method: 'POST',
+        body: { body }
+      }),
+      invalidatesTags: ['Item']
+    }),
+    updateComment: builder.mutation<{ comment: CommentDto }, { commentId: string; body: string }>({
+      query: ({ commentId, body }) => ({
+        url: `/v1/comments/${commentId}`,
+        method: 'PATCH',
         body: { body }
       }),
       invalidatesTags: ['Item']
@@ -249,12 +364,19 @@ export const fieldguideApi = createApi({
 
 export const {
   useAdminDashboardQuery,
+  useAddAlbumItemMutation,
+  useAlbumQuery,
   useAlbumsQuery,
   useAskAiMutation,
   useAddSourceMutation,
+  useCreateAlbumMutation,
   useCreateCommentMutation,
+  useCreateSubmissionMutation,
+  useDeleteAlbumMutation,
+  useDeleteSourceMutation,
   useDeleteAdminCommentMutation,
   useFeedQuery,
+  useForgotPasswordMutation,
   useHealthQuery,
   useHideItemMutation,
   useItemQuery,
@@ -263,15 +385,22 @@ export const {
   useLogoutMutation,
   useMeQuery,
   usePatchAdminItemMutation,
+  usePinAdminItemMutation,
   useProfileQuery,
   useRegisterMutation,
   useRemoveAdminItemMutation,
   useReviewSubmissionMutation,
+  useResetPasswordMutation,
   useResyncSourceMutation,
   useSaveItemMutation,
   useShareItemMutation,
+  useSetAdminUserRoleMutation,
   useSuspendAdminUserMutation,
   useSwitchContentModeMutation,
+  useUpdateAlbumMutation,
+  useUpdateAiConfigMutation,
+  useUpdateCommentMutation,
+  useUpdateSourceMutation,
   useUpdateSettingsMutation,
   useUnsaveItemMutation
 } = fieldguideApi;

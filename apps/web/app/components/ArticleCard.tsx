@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import BookmarkBorderRoundedIcon from '@mui/icons-material/BookmarkBorderRounded';
 import ChatBubbleOutlineRoundedIcon from '@mui/icons-material/ChatBubbleOutlineRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
@@ -44,20 +45,46 @@ export function ArticleCard({
   showImage?: boolean;
   onHide?: (itemId: string) => void;
 }) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const { isAuthenticated } = useSessionViewer();
+  const { isAuthenticated, viewer } = useSessionViewer();
   const [saveItem, saveItemState] = useSaveItemMutation();
   const [hideItem] = useHideItemMutation();
   const [shareItem] = useShareItemMutation();
   const translation = resolveTranslation(item, language) || item.translations[0];
   const english = resolveTranslation(item, 'en');
   const bulgarian = resolveTranslation(item, 'bg');
+  const detailHref = `/item/${item.slug}`;
+
+  const navigateToDetail = () => {
+    router.push(detailHref);
+  };
+
+  const handleCardActivate = (event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('button, a, input, textarea, select, [role="button"]')) {
+      return;
+    }
+    if ('key' in event && event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+    if ('preventDefault' in event) {
+      event.preventDefault();
+    }
+    navigateToDetail();
+  };
 
   return (
     <>
-      <Card sx={{ overflow: 'hidden', border: '1px solid', borderColor: 'divider' }}>
+      <Card
+        sx={{ overflow: 'hidden', border: '1px solid', borderColor: 'divider', cursor: 'pointer' }}
+        role="link"
+        tabIndex={0}
+        onClick={handleCardActivate}
+        onKeyDown={handleCardActivate}
+      >
         {showImage ? (
           <CardMedia
             component="img"
@@ -163,7 +190,19 @@ export function ArticleCard({
               <Button component={Link} href={`/item/${item.slug}#comments`} startIcon={<ChatBubbleOutlineRoundedIcon />} variant="outlined">
                 Comment ({commentCount})
               </Button>
-              <Button startIcon={<SmartToyOutlinedIcon />} variant="contained" onClick={() => setAskOpen((value) => !value)}>
+              <Button
+                startIcon={<SmartToyOutlinedIcon />}
+                variant="contained"
+                onClick={() => {
+                  if (isAuthenticated && !viewer.askAiEnabled) {
+                    setToast('Ask-AI is disabled in your settings.');
+                    return;
+                  }
+                  setAskOpen((value) => !value);
+                }}
+                data-ask-ai-toggle="true"
+                disabled={isAuthenticated && !viewer.askAiEnabled}
+              >
                 Ask AI
               </Button>
             </Stack>

@@ -12,13 +12,20 @@ import { CssBaseline, ThemeProvider } from '@mui/material';
 
 import type { RootState } from './lib/store';
 import './lib/i18n';
+import { useMeQuery } from './lib/api';
 import { store } from './lib/store';
 import { buildTheme } from './theme/presets';
 
 function ThemeBridge({ children }: PropsWithChildren) {
-  const vibePreset = useSelector((state: RootState) => state.ui.vibePreset);
-  const themeMode = useSelector((state: RootState) => state.ui.themeMode);
-  const theme = buildTheme(vibePreset, themeMode);
+  const meQuery = useMeQuery();
+  const fallbackVibePreset = useSelector((state: RootState) => state.ui.vibePreset);
+  const fallbackThemeMode = useSelector((state: RootState) => state.ui.themeMode);
+  const fallbackFontScale = useSelector((state: RootState) => state.ui.fontScale);
+  const user = meQuery.data?.user || null;
+  const theme = buildTheme(user?.vibePreset || fallbackVibePreset, user?.themeMode || fallbackThemeMode, {
+    fontFamily: user?.fontFamily,
+    fontScale: user?.fontScale || fallbackFontScale
+  });
 
   return (
     <ThemeProvider theme={theme}>

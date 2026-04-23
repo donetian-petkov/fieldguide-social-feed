@@ -13,6 +13,7 @@ import {
   useDeleteAdminCommentMutation,
   useLockAdminItemCommentsMutation,
   usePatchAdminItemMutation,
+  usePinAdminItemMutation,
   useRemoveAdminItemMutation,
   useReviewSubmissionMutation
 } from '../../lib/api';
@@ -31,6 +32,7 @@ export default function AdminModerationPage() {
   const [reviewSubmission] = useReviewSubmissionMutation();
   const [deleteComment] = useDeleteAdminCommentMutation();
   const [patchItem] = usePatchAdminItemMutation();
+  const [pinItem] = usePinAdminItemMutation();
   const [removeItem] = useRemoveAdminItemMutation();
   const [lockComments] = useLockAdminItemCommentsMutation();
 
@@ -80,6 +82,15 @@ export default function AdminModerationPage() {
       setToast(locked ? 'Comments locked.' : 'Comments unlocked.');
     } catch {
       setToast('Could not change comment locking.');
+    }
+  }
+
+  async function handlePin(itemId: string, slot: number) {
+    try {
+      await pinItem({ itemId, slot }).unwrap();
+      setToast(`Item pinned to slot ${slot + 1}.`);
+    } catch {
+      setToast('Could not pin the item.');
     }
   }
 
@@ -163,6 +174,27 @@ export default function AdminModerationPage() {
                         onClick={() => void handleItemPatch(item.id, { flags: ['spoiler'] }, 'Item marked as spoiler.')}
                       >
                         Mark Spoiler
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => void handlePin(item.id, 0)}
+                      >
+                        Pin Slot 1
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => void handlePin(item.id, 1)}
+                      >
+                        Pin Slot 2
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => void handlePin(item.id, 2)}
+                      >
+                        Pin Slot 3
                       </Button>
                       <Button
                         variant="contained"

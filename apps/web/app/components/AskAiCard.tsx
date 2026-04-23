@@ -7,16 +7,22 @@ import type { ContentItem, InterfaceLanguage } from '@edu-feed/shared';
 import { resolveTranslation } from '@edu-feed/shared';
 
 import { useAskAiMutation } from '../lib/api';
+import { useSessionViewer } from '../lib/session';
 
 export function AskAiCard({ item, language }: { item: ContentItem; language: InterfaceLanguage }) {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [askAi, askAiState] = useAskAiMutation();
+  const { isAuthenticated, viewer } = useSessionViewer();
   const translation = resolveTranslation(item, language);
 
   const handleAsk = async () => {
     if (!question.trim()) return;
+    if (isAuthenticated && !viewer.askAiEnabled) {
+      setErrorMessage(language === 'bg' ? 'Ask-AI е изключен в настройките ти.' : 'Ask-AI is disabled in your settings.');
+      return;
+    }
     setErrorMessage(null);
     try {
       const result = await askAi({
@@ -53,10 +59,17 @@ export function AskAiCard({ item, language }: { item: ContentItem; language: Int
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
             placeholder={language === 'bg' ? 'Например: Какви източници да потърся след това?' : 'For example: Which sources should I read next?'}
+            inputProps={{ 'data-ask-ai-input': 'true' }}
+            disabled={isAuthenticated && !viewer.askAiEnabled}
           />
-          <Button variant="contained" onClick={handleAsk} disabled={askAiState.isLoading}>
+          <Button variant="contained" onClick={handleAsk} disabled={askAiState.isLoading || (isAuthenticated && !viewer.askAiEnabled)}>
             {askAiState.isLoading ? 'Thinking...' : 'Ask'}
           </Button>
+          {isAuthenticated && !viewer.askAiEnabled ? (
+            <Alert severity="info">
+              {language === 'bg' ? 'Включи Ask-AI от настройките, за да задаваш въпроси.' : 'Enable Ask-AI in settings to ask questions.'}
+            </Alert>
+          ) : null}
           {errorMessage ? <Alert severity="warning">{errorMessage}</Alert> : null}
           {answer ? (
             <Typography variant="body2" color="text.secondary">

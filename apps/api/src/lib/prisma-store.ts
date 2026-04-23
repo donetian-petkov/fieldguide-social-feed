@@ -15,10 +15,12 @@ import type {
   ModerationFlag,
   SourceDefinition,
   SubmissionDto,
+  UserRole,
   UserSettingsDto
 } from '@edu-feed/shared';
 import { DEMO_AI_CONFIG, filterItemsForFeed, resolveTranslation } from '@edu-feed/shared';
 
+import { estimateCostUsd, estimateTokens, fallbackModelForProvider, runCompletion } from './ai-runtime.js';
 import type { AdminSnapshot, AppStore, FeedResponse, RegisterInput } from './store.js';
 
 type UserWithSettings = Prisma.UserGetPayload<{
@@ -78,6 +80,7 @@ type SubmissionWithUser = Prisma.SubmissionGetPayload<{
 }>;
 
 const DEFAULT_FONT = '"Fraunces", "Georgia", serif';
+const COMMENT_EDIT_WINDOW_MS = 15 * 60 * 1000;
 
 function hashToken(token: string) {
   return createHash('sha256').update(token).digest('hex');
@@ -147,6 +150,7 @@ function buildUserDto(user: UserWithSettings): UserSettingsDto {
     themeMode: settings?.themeMode || 'light',
     contentMode: settings?.contentMode || 'standard',
     newsletterEnabled: settings?.newsletterEnabled || false,
+    newsletterCadence: settings?.newsletterCadence || 'weekly',
     askAiEnabled: settings?.askAiEnabled ?? true,
     protectedModeEnabled: settings?.protectedModeEnabled ?? true
   };
@@ -179,10 +183,33 @@ function buildTags(item: ItemWithRelations): ContentTag[] {
   return tags;
 }
 
+function buildAiArtifactAudit(record: {
+  provider: string | null;
+  model: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalCostUsd: Prisma.Decimal | number | null;
+  createdAt: Date | null;
+}) {
+  if (!record.provider || !record.model || record.inputTokens === null || record.outputTokens === null || record.totalCostUsd === null || !record.createdAt) {
+    return null;
+  }
+
+  return {
+    provider: record.provider as ContentItem['ai']['summaryProvider'],
+    model: record.model,
+    inputTokens: record.inputTokens,
+    outputTokens: record.outputTokens,
+    totalCostUsd: Number(record.totalCostUsd),
+    createdAt: record.createdAt.toISOString()
+  };
+}
+
 function buildItemDto(item: ItemWithRelations): ContentItem {
   const tags = buildTags(item);
   const subjectTags = tags.filter((tag) => tag.type === 'subject').map((tag) => tag.value) as ContentItem['subjects'];
   const flags = tags.filter((tag) => tag.type === 'flag').map((tag) => tag.value) as ModerationFlag[];
+  const translatedArtifact = item.translations.find((translation) => translation.aiGeneratedAt) || null;
 
   return {
     id: item.id,
@@ -211,15 +238,49 @@ function buildItemDto(item: ItemWithRelations): ContentItem {
       language: translation.language,
       title: translation.title,
       summary: translation.summary,
-      slug: translation.slug
+      slug: translation.slug,
+      aiAudit: buildAiArtifactAudit({
+        provider: translation.aiProvider,
+        model: translation.aiModel,
+        inputTokens: translation.aiInputTokens,
+        outputTokens: translation.aiOutputTokens,
+        totalCostUsd: translation.aiTotalCostUsd,
+        createdAt: translation.aiGeneratedAt
+      })
     })),
     tags,
     bodyMarkdown: item.bodyMarkdown,
     ai: {
-      summaryProvider: 'openai',
-      summaryModel: DEMO_AI_CONFIG.summaryModel,
-      translationProvider: 'openai',
-      translationModel: DEMO_AI_CONFIG.translationModel
+      summaryProvider: (item.summaryAiProvider as ContentItem['ai']['summaryProvider']) || DEMO_AI_CONFIG.provider,
+      summaryModel: item.summaryAiModel || DEMO_AI_CONFIG.summaryModel,
+      translationProvider: (translatedArtifact?.aiProvider as ContentItem['ai']['translationProvider']) || DEMO_AI_CONFIG.provider,
+      translationModel: translatedArtifact?.aiModel || DEMO_AI_CONFIG.translationModel,
+      summaryAudit: buildAiArtifactAudit({
+        provider: item.summaryAiProvider,
+        model: item.summaryAiModel,
+        inputTokens: item.summaryAiInputTokens,
+        outputTokens: item.summaryAiOutputTokens,
+        totalCostUsd: item.summaryAiTotalCostUsd,
+        createdAt: item.summaryAiGeneratedAt
+      }),
+      translationAudit: translatedArtifact
+        ? buildAiArtifactAudit({
+            provider: translatedArtifact.aiProvider,
+            model: translatedArtifact.aiModel,
+            inputTokens: translatedArtifact.aiInputTokens,
+            outputTokens: translatedArtifact.aiOutputTokens,
+            totalCostUsd: translatedArtifact.aiTotalCostUsd,
+            createdAt: translatedArtifact.aiGeneratedAt
+          })
+        : null,
+      classificationAudit: buildAiArtifactAudit({
+        provider: item.classificationAiProvider,
+        model: item.classificationAiModel,
+        inputTokens: item.classificationAiInputTokens,
+        outputTokens: item.classificationAiOutputTokens,
+        totalCostUsd: item.classificationAiTotalCostUsd,
+        createdAt: item.classificationAiGeneratedAt
+      })
     }
   };
 }
@@ -295,14 +356,33 @@ export class PrismaStore implements AppStore {
 
   private readonly appUrl: string;
 
+  private readonly aiKeys: {
+    OPENAI_API_KEY: string;
+    ANTHROPIC_API_KEY: string;
+    OPENROUTER_API_KEY: string;
+  };
+
   private readonly modeVerifications = new Map<string, number>();
 
   constructor(
     private readonly prisma: PrismaClient,
-    options: { modeSwitchTtlMinutes: number; appUrl: string }
+    options: {
+      modeSwitchTtlMinutes: number;
+      appUrl: string;
+      aiKeys: {
+        OPENAI_API_KEY?: string;
+        ANTHROPIC_API_KEY?: string;
+        OPENROUTER_API_KEY?: string;
+      };
+    }
   ) {
     this.modeSwitchTtlMs = options.modeSwitchTtlMinutes * 60 * 1000;
     this.appUrl = options.appUrl.replace(/\/$/, '');
+    this.aiKeys = {
+      OPENAI_API_KEY: options.aiKeys.OPENAI_API_KEY || '',
+      ANTHROPIC_API_KEY: options.aiKeys.ANTHROPIC_API_KEY || '',
+      OPENROUTER_API_KEY: options.aiKeys.OPENROUTER_API_KEY || ''
+    };
   }
 
   async disconnect() {
@@ -373,6 +453,7 @@ export class PrismaStore implements AppStore {
             themeMode: 'light',
             contentMode: 'standard',
             newsletterEnabled: false,
+            newsletterCadence: 'weekly',
             askAiEnabled: true,
             protectedModeEnabled: true
           }
@@ -633,6 +714,32 @@ export class PrismaStore implements AppStore {
     return filterItemsForFeed([dto], 'saved', mode).length ? dto : null;
   }
 
+  async recordItemView(username: string, itemId: string) {
+    const [user, item] = await Promise.all([this.requireUser(username), this.findItem(itemId)]);
+    if (!item || item.removedAt) throw new Error('Item not found.');
+    await this.prisma.itemView.upsert({
+      where: {
+        userId_itemId: {
+          userId: user.id,
+          itemId: item.id
+        }
+      },
+      update: {
+        viewCount: {
+          increment: 1
+        },
+        lastViewedAt: new Date()
+      },
+      create: {
+        userId: user.id,
+        itemId: item.id
+      }
+    });
+    return {
+      ok: true
+    };
+  }
+
   async getProfileItems(username: string) {
     const items = await this.prisma.contentItem.findMany({
       where: {
@@ -793,6 +900,57 @@ export class PrismaStore implements AppStore {
     return albums.map(buildAlbumDto);
   }
 
+  async getAlbum(username: string, albumId: string) {
+    const album = await this.prisma.album.findFirst({
+      where: {
+        id: albumId,
+        owner: {
+          username
+        }
+      },
+      include: {
+        owner: true,
+        items: {
+          orderBy: {
+            position: 'asc'
+          }
+        }
+      }
+    });
+    if (!album) return null;
+
+    const itemRecords = await this.prisma.contentItem.findMany({
+      where: {
+        id: {
+          in: album.items.map((entry) => entry.itemId)
+        },
+        removedAt: null
+      },
+      include: {
+        source: {
+          include: {
+            feeds: true
+          }
+        },
+        author: {
+          include: {
+            settings: true
+          }
+        },
+        translations: true,
+        tags: true
+      }
+    });
+    const itemsById = new Map(itemRecords.map((item) => [item.id, buildItemDto(item)]));
+
+    return {
+      album: buildAlbumDto(album),
+      items: album.items
+        .map((entry) => itemsById.get(entry.itemId))
+        .filter(Boolean) as ContentItem[]
+    };
+  }
+
   async createAlbum(username: string, title: string, description: string) {
     const user = await this.requireUser(username);
     const album = await this.prisma.album.create({
@@ -811,6 +969,121 @@ export class PrismaStore implements AppStore {
       }
     });
     return buildAlbumDto(album);
+  }
+
+  async updateAlbum(
+    username: string,
+    albumId: string,
+    patch: Partial<Pick<AlbumDto, 'title' | 'description' | 'coverItemId' | 'itemIds'>>
+  ) {
+    const user = await this.requireUser(username);
+    const album = await this.prisma.album.findFirst({
+      where: {
+        id: albumId,
+        ownerId: user.id
+      },
+      include: {
+        owner: true,
+        items: {
+          orderBy: {
+            position: 'asc'
+          }
+        }
+      }
+    });
+    if (!album) throw new Error('Album not found.');
+
+    const currentItemIds = album.items.map((entry) => entry.itemId);
+    const nextItemIds = patch.itemIds ? [...patch.itemIds] : currentItemIds;
+    const currentItemSet = new Set(currentItemIds);
+
+    if (new Set(nextItemIds).size !== nextItemIds.length) {
+      throw new Error('Album item order cannot contain duplicates.');
+    }
+    if (nextItemIds.some((itemId) => !currentItemSet.has(itemId))) {
+      throw new Error('Album updates can only reorder or remove existing items.');
+    }
+
+    const nextCoverItemId = patch.coverItemId !== undefined ? patch.coverItemId : album.coverItemId;
+    if (nextCoverItemId && !nextItemIds.includes(nextCoverItemId)) {
+      throw new Error('Cover item must belong to the album.');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (patch.itemIds) {
+        if (nextItemIds.length) {
+          await tx.albumItem.deleteMany({
+            where: {
+              albumId,
+              itemId: {
+                notIn: nextItemIds
+              }
+            }
+          });
+        } else {
+          await tx.albumItem.deleteMany({
+            where: {
+              albumId
+            }
+          });
+        }
+
+        await Promise.all(
+          nextItemIds.map((itemId, index) =>
+            tx.albumItem.update({
+              where: {
+                albumId_itemId: {
+                  albumId,
+                  itemId
+                }
+              },
+              data: {
+                position: index
+              }
+            })
+          )
+        );
+      }
+
+      await tx.album.update({
+        where: {
+          id: albumId
+        },
+        data: {
+          title: patch.title,
+          description: patch.description,
+          coverItemId: nextItemIds.length ? nextCoverItemId || nextItemIds[0] : null
+        }
+      });
+    });
+
+    const updated = await this.prisma.album.findUnique({
+      where: {
+        id: albumId
+      },
+      include: {
+        owner: true,
+        items: {
+          orderBy: {
+            position: 'asc'
+          }
+        }
+      }
+    });
+    if (!updated) throw new Error('Album not found.');
+    return buildAlbumDto(updated);
+  }
+
+  async deleteAlbum(username: string, albumId: string) {
+    const user = await this.requireUser(username);
+    const deleted = await this.prisma.album.deleteMany({
+      where: {
+        id: albumId,
+        ownerId: user.id
+      }
+    });
+    if (!deleted.count) throw new Error('Album not found.');
+    return { ok: true as const };
   }
 
   async addAlbumItem(username: string, albumId: string, itemId: string) {
@@ -881,17 +1154,180 @@ export class PrismaStore implements AppStore {
     return buildSubmissionDto(submission);
   }
 
-  async askAi(itemId: string, question: string, language: InterfaceLanguage) {
-    const item = await this.getItem(itemId);
+  async updateComment(username: string, commentId: string, body: string) {
+    const user = await this.requireUser(username);
+    const existing = await this.prisma.comment.findUnique({
+      where: {
+        id: commentId
+      },
+      include: {
+        author: {
+          include: {
+            settings: true
+          }
+        },
+        item: {
+          select: {
+            commentsLocked: true
+          }
+        }
+      }
+    });
+    if (!existing || existing.deletedAt) throw new Error('Comment not found.');
+    if (existing.authorId !== user.id) throw new Error('You can only edit your own comments.');
+    if (existing.item.commentsLocked) throw new Error('Comments are locked for this item.');
+    if (Date.now() - existing.createdAt.getTime() > COMMENT_EDIT_WINDOW_MS) {
+      throw new Error('The comment edit window has expired.');
+    }
+
+    const updated = await this.prisma.comment.update({
+      where: {
+        id: commentId
+      },
+      data: {
+        body,
+        editedAt: new Date()
+      },
+      include: {
+        author: {
+          include: {
+            settings: true
+          }
+        }
+      }
+    });
+
+    return buildCommentDto(updated);
+  }
+
+  async askAi(itemId: string, question: string, language: InterfaceLanguage, username?: string | null) {
+    const [item, viewer] = await Promise.all([
+      this.getItem(itemId, username),
+      username
+        ? this.prisma.user.findUnique({
+            where: { username },
+            include: { settings: true }
+          })
+        : Promise.resolve(null)
+    ]);
     if (!item) throw new Error('Item not found.');
+    if (viewer?.settings && !viewer.settings.askAiEnabled) {
+      throw new Error('Ask-AI is disabled in your settings.');
+    }
     const translation = resolveTranslation(item, language);
-    const answer =
+    const fallbackAnswer =
       language === 'bg'
         ? `За "${translation?.title}" бих започнал с произхода на източника, ключовия аргумент и какви допълнителни първични или музейни материали можеш да потърсиш. Въпросът ти беше: ${question}`
         : `For "${translation?.title}", start with the source context, the central claim, and which museum, archive, or primary materials could deepen the story. Your question was: ${question}`;
+    const citations = [item.externalUrl || `${this.appUrl}/item/${item.slug}`];
+    const aiConfig = await this.getEffectiveAiConfig();
+    const contentMode = viewer?.settings?.contentMode || 'standard';
+
+    const systemPrompt =
+      language === 'bg'
+        ? [
+            'Ти си образователен помощник. Отговори с максимум един абзац, остани върху текущата статия и не измисляй факти.',
+            contentMode === 'kid'
+              ? 'Пази тона подходящ за деца: не давай графични, сексуални или зрели подробности; обобщавай чувствителните теми на високо ниво и предлагай безопасни посоки за учене.'
+              : contentMode === 'standard'
+                ? 'Пази отговора на общообразователно ниво и избягвай ненужни шокиращи или зрели подробности.'
+                : 'Запази академичен тон и стой в рамките на дадения материал.'
+          ].join(' ')
+        : [
+            'You are an educational assistant. Answer in one short paragraph, stay scoped to the current article, and avoid unsupported claims.',
+            contentMode === 'kid'
+              ? 'Keep the answer kid-safe: do not provide graphic, sexual, or mature detail; summarize sensitive material only at a high level and steer toward safe research directions.'
+              : contentMode === 'standard'
+                ? 'Keep the answer broadly educational and avoid unnecessary disturbing or explicit detail.'
+                : 'Keep an academic tone and stay tightly grounded in the supplied item.'
+          ].join(' ');
+    const userPrompt = [
+      `Title: ${translation?.title || item.originalTitle}`,
+      `Summary: ${translation?.summary || item.originalSummary}`,
+      `Tags: ${item.tags.map((tag) => `${tag.type}:${tag.value}`).join(', ')}`,
+      `Question: ${question}`
+    ].join('\n');
+    const estimatedInput = estimateTokens(`${systemPrompt}\n${userPrompt}`);
+    const estimatedOutput = 260;
+
+    let model = aiConfig.askModel;
+    let estimatedCost = estimateCostUsd(model, estimatedInput, estimatedOutput);
+    if (aiConfig.autoDowngrade && estimatedCost > aiConfig.perJobBudgetUsd) {
+      model = fallbackModelForProvider(aiConfig.provider);
+      estimatedCost = estimateCostUsd(model, estimatedInput, estimatedOutput);
+    }
+
+    const monthlySpent = await this.getMonthlyAiSpendUsd();
+    const monthlyLimitReached = monthlySpent + estimatedCost > aiConfig.monthlyBudgetUsd;
+    if (monthlyLimitReached && aiConfig.pauseOnBudgetExceeded) {
+      await this.prisma.systemErrorEvent.create({
+        data: {
+          scope: 'ai',
+          level: 'warn',
+          message: `Ask-AI fallback triggered: monthly budget reached for provider ${aiConfig.provider}.`
+        }
+      });
+      return {
+        answer: fallbackAnswer,
+        citations
+      };
+    }
+
+    if (estimatedCost > aiConfig.perJobBudgetUsd) {
+      await this.prisma.systemErrorEvent.create({
+        data: {
+          scope: 'ai',
+          level: 'warn',
+          message: `Ask-AI fallback triggered: per-job budget exceeded for model ${model}.`
+        }
+      });
+      return {
+        answer: fallbackAnswer,
+        citations
+      };
+    }
+
+    try {
+      const completion = await runCompletion({
+        provider: aiConfig.provider,
+        model,
+        systemPrompt,
+        userPrompt,
+        temperature: 0.2,
+        maxOutputTokens: estimatedOutput,
+        keys: this.aiKeys
+      });
+      const finalCost = estimateCostUsd(model, completion.inputTokens, completion.outputTokens);
+      await this.prisma.aiUsageLedger.create({
+        data: {
+          itemId: item.id,
+          provider: aiConfig.provider,
+          model,
+          purpose: 'ask',
+          inputTokens: completion.inputTokens,
+          outputTokens: completion.outputTokens,
+          totalCostUsd: finalCost
+        }
+      });
+
+      return {
+        answer: completion.text,
+        citations
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown Ask-AI provider failure.';
+      await this.prisma.systemErrorEvent.create({
+        data: {
+          scope: 'ai',
+          level: 'warn',
+          message: `Ask-AI provider fallback: ${message}`
+        }
+      });
+    }
+
     return {
-      answer,
-      citations: [item.externalUrl || `${this.appUrl}/item/${item.slug}`]
+      answer: fallbackAnswer,
+      citations
     };
   }
 
@@ -1028,6 +1464,89 @@ export class PrismaStore implements AppStore {
       }
     });
     return buildSourceDefinition(created);
+  }
+
+  async updateSource(sourceId: string, patch: Partial<Omit<SourceDefinition, 'id'>>) {
+    const current = await this.prisma.source.findUnique({
+      where: {
+        id: sourceId
+      },
+      include: {
+        feeds: true
+      }
+    });
+    if (!current) throw new Error('Source not found.');
+
+    const baseline = buildSourceDefinition(current);
+    const next = {
+      ...baseline,
+      ...patch,
+      subjects: patch.subjects || baseline.subjects
+    };
+    const primaryFeed = current.feeds[0];
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.source.update({
+        where: {
+          id: sourceId
+        },
+        data: {
+          name: next.name,
+          slug: next.slug,
+          iconUrl: next.iconUrl,
+          siteUrl: next.siteUrl,
+          description: next.description,
+          subjectsJson: JSON.stringify(next.subjects),
+          language: next.language,
+          defaultAudience: next.defaultAudience,
+          sourceType: next.sourceType,
+          status: next.status
+        }
+      });
+
+      if (primaryFeed) {
+        await tx.sourceFeed.update({
+          where: {
+            id: primaryFeed.id
+          },
+          data: {
+            kind: next.kind,
+            feedUrl: next.feedUrl
+          }
+        });
+      } else {
+        await tx.sourceFeed.create({
+          data: {
+            sourceId,
+            kind: next.kind,
+            feedUrl: next.feedUrl
+          }
+        });
+      }
+
+      return tx.source.findUnique({
+        where: {
+          id: sourceId
+        },
+        include: {
+          feeds: true
+        }
+      });
+    });
+    if (!updated) throw new Error('Source not found.');
+    return buildSourceDefinition(updated);
+  }
+
+  async deleteSource(sourceId: string) {
+    const deleted = await this.prisma.source.deleteMany({
+      where: {
+        id: sourceId
+      }
+    });
+    if (!deleted.count) {
+      throw new Error('Source not found.');
+    }
+    return { ok: true as const };
   }
 
   async reviewSubmission(submissionId: string, decision: 'approved' | 'rejected') {
@@ -1353,6 +1872,35 @@ export class PrismaStore implements AppStore {
     return buildUserDto(updated);
   }
 
+  async setUserRole(username: string, role: UserRole) {
+    const user = await this.requireUser(username);
+    if (user.role === role) return buildUserDto(user);
+    if (user.role === 'admin' && role !== 'admin') {
+      const adminCount = await this.prisma.user.count({
+        where: {
+          role: 'admin'
+        }
+      });
+      if (adminCount <= 1) {
+        throw new Error('At least one admin account must remain.');
+      }
+    }
+
+    const updated = await this.prisma.user.update({
+      where: {
+        id: user.id
+      },
+      data: {
+        role
+      },
+      include: {
+        settings: true
+      }
+    });
+
+    return buildUserDto(updated);
+  }
+
   async updateAiConfig(patch: Partial<AiModelConfig>) {
     const current = await this.prisma.aiConfig.findUnique({
       where: { id: 1 }
@@ -1406,6 +1954,7 @@ export class PrismaStore implements AppStore {
       themeMode: patch.themeMode,
       contentMode: patch.contentMode,
       newsletterEnabled: patch.newsletterEnabled,
+      newsletterCadence: patch.newsletterCadence,
       askAiEnabled: patch.askAiEnabled,
       protectedModeEnabled: patch.protectedModeEnabled
     };
@@ -1425,6 +1974,7 @@ export class PrismaStore implements AppStore {
         themeMode: allowed.themeMode || 'light',
         contentMode: allowed.contentMode || 'standard',
         newsletterEnabled: allowed.newsletterEnabled || false,
+        newsletterCadence: allowed.newsletterCadence || 'weekly',
         askAiEnabled: allowed.askAiEnabled ?? true,
         protectedModeEnabled: allowed.protectedModeEnabled ?? true
       },
@@ -1465,6 +2015,31 @@ export class PrismaStore implements AppStore {
     });
     if (!user) throw new Error('Account not found.');
     return user;
+  }
+
+  private async getEffectiveAiConfig() {
+    const row = await this.prisma.aiConfig.findUnique({
+      where: {
+        id: 1
+      }
+    });
+    return row ? aiConfigToDto(row) : DEMO_AI_CONFIG;
+  }
+
+  private async getMonthlyAiSpendUsd() {
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const aggregate = await this.prisma.aiUsageLedger.aggregate({
+      _sum: {
+        totalCostUsd: true
+      },
+      where: {
+        createdAt: {
+          gte: monthStart
+        }
+      }
+    });
+    return Number(aggregate._sum.totalCostUsd || 0);
   }
 
   private async ensureCommunitySource(tx: Prisma.TransactionClient) {

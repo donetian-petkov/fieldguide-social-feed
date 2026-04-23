@@ -15,6 +15,7 @@ const settingsPatchSchema = z.object({
   imageMode: z.enum(['on', 'off']).optional(),
   themeMode: z.enum(['light', 'dark', 'system']).optional(),
   newsletterEnabled: z.boolean().optional(),
+  newsletterCadence: z.enum(['daily', 'weekly']).optional(),
   askAiEnabled: z.boolean().optional()
 });
 
@@ -39,9 +40,9 @@ export async function registerMeRoutes(app: FastifyInstance, options: { store: A
     if (!request.currentUser) throw new Error('Authentication is required.');
     const parsed = settingsPatchSchema.parse(request.body || {});
     const user = await options.store.updateUserSettings(request.currentUser.username, parsed);
-    if (parsed.newsletterEnabled) {
-      await options.queues.scheduleNewsletter(user.username).catch((error) => {
-        app.log.warn({ error, username: user.username }, 'Failed to register newsletter schedule');
+    if (parsed.newsletterEnabled !== undefined || parsed.newsletterCadence !== undefined) {
+      await options.queues.syncNewsletterSchedule(user.username, user.newsletterEnabled, user.newsletterCadence).catch((error) => {
+        app.log.warn({ error, username: user.username }, 'Failed to sync newsletter schedule');
       });
     }
     return { user };

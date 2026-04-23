@@ -18,7 +18,13 @@ import type { SourceDefinition, SubjectTag } from '@edu-feed/shared';
 import { AppShell } from '../../components/AppShell';
 import { SectionCard } from '../../components/SectionCard';
 import { getAdminModel } from '../../lib/demo';
-import { useAddSourceMutation, useAdminDashboardQuery, useResyncSourceMutation } from '../../lib/api';
+import {
+  useAddSourceMutation,
+  useAdminDashboardQuery,
+  useDeleteSourceMutation,
+  useResyncSourceMutation,
+  useUpdateSourceMutation
+} from '../../lib/api';
 import { useSessionViewer } from '../../lib/session';
 
 const subjectOptions: Array<{ value: SubjectTag; label: string }> = [
@@ -54,20 +60,32 @@ export default function AdminSourcesPage() {
   const adminQuery = useAdminDashboardQuery();
   const model = adminQuery.data || fallback;
   const [form, setForm] = useState<Omit<SourceDefinition, 'id'>>(defaultForm);
+  const [editingSourceId, setEditingSourceId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [activeResyncId, setActiveResyncId] = useState<string | null>(null);
   const [addSource, addSourceState] = useAddSourceMutation();
+  const [updateSource, updateSourceState] = useUpdateSourceMutation();
+  const [deleteSource, deleteSourceState] = useDeleteSourceMutation();
   const [resyncSource] = useResyncSourceMutation();
 
   const sourceCards = useMemo(() => model.sources, [model.sources]);
 
   async function handleSubmit() {
     try {
-      await addSource(form).unwrap();
-      setToast('Source saved and polling scheduled.');
+      if (editingSourceId) {
+        await updateSource({
+          sourceId: editingSourceId,
+          patch: form
+        }).unwrap();
+        setToast('Source updated.');
+      } else {
+        await addSource(form).unwrap();
+        setToast('Source saved and polling scheduled.');
+      }
+      setEditingSourceId(null);
       setForm(defaultForm);
     } catch {
-      setToast('Could not save the source right now.');
+      setToast(editingSourceId ? 'Could not update the source right now.' : 'Could not save the source right now.');
     }
   }
 
@@ -83,10 +101,38 @@ export default function AdminSourcesPage() {
     }
   }
 
+  async function handleStatusToggle(source: SourceDefinition) {
+    const nextStatus = source.status === 'active' ? 'paused' : 'active';
+    try {
+      await updateSource({
+        sourceId: source.id,
+        patch: {
+          status: nextStatus
+        }
+      }).unwrap();
+      setToast(nextStatus === 'active' ? 'Source resumed.' : 'Source paused.');
+    } catch {
+      setToast('Could not change the source status.');
+    }
+  }
+
+  async function handleDeleteSource(sourceId: string) {
+    try {
+      await deleteSource(sourceId).unwrap();
+      if (editingSourceId === sourceId) {
+        setEditingSourceId(null);
+        setForm(defaultForm);
+      }
+      setToast('Source deleted.');
+    } catch {
+      setToast('Could not delete the source.');
+    }
+  }
+
   return (
     <AppShell title="Admin Sources" subtitle="Add, edit, pause, resume, and inspect predefined feeds." viewer={viewer}>
       <Box sx={{ display: 'grid', gap: 3 }}>
-        <SectionCard title="Add Source" eyebrow="Curated ingestion">
+        <SectionCard title={editingSourceId ? 'Edit Source' : 'Add Source'} eyebrow="Curated ingestion">
           <Box
             sx={{
               display: 'grid',
@@ -191,11 +237,25 @@ export default function AdminSourcesPage() {
             />
           </Box>
           <Stack direction="row" spacing={1.5} sx={{ mt: 2 }}>
-            <Button variant="contained" onClick={() => void handleSubmit()} disabled={addSourceState.isLoading}>
-              Save Source
+            <Button
+              variant="contained"
+              onClick={() => void handleSubmit()}
+              disabled={addSourceState.isLoading || updateSourceState.isLoading}
+            >
+              {addSourceState.isLoading || updateSourceState.isLoading
+                ? 'Saving...'
+                : editingSourceId
+                  ? 'Update Source'
+                  : 'Save Source'}
             </Button>
-            <Button variant="text" onClick={() => setForm(defaultForm)}>
-              Reset
+            <Button
+              variant="text"
+              onClick={() => {
+                setEditingSourceId(null);
+                setForm(defaultForm);
+              }}
+            >
+              {editingSourceId ? 'Cancel Edit' : 'Reset'}
             </Button>
           </Stack>
         </SectionCard>
@@ -225,6 +285,41 @@ export default function AdminSourcesPage() {
                     <Chip size="small" color="warning" label={source.defaultAudience.replace('_', ' ')} />
                   </Stack>
                   <Stack direction="row" spacing={1.5}>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => {
+                        setEditingSourceId(source.id);
+                        setForm({
+                          name: source.name,
+                          slug: source.slug,
+                          iconUrl: source.iconUrl,
+                          siteUrl: source.siteUrl,
+                          feedUrl: source.feedUrl,
+                          kind: source.kind,
+                          status: source.status,
+                          sourceType: source.sourceType,
+                          subjects: source.subjects,
+                          defaultAudience: source.defaultAudience,
+                          language: source.language,
+                          description: source.description
+                        });
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button variant="outlined" size="small" onClick={() => void handleStatusToggle(source)}>
+                      {source.status === 'active' ? 'Pause' : 'Resume'}
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      color="error"
+                      onClick={() => void handleDeleteSource(source.id)}
+                      disabled={deleteSourceState.isLoading}
+                    >
+                      Delete
+                    </Button>
                     <Button
                       variant="outlined"
                       size="small"

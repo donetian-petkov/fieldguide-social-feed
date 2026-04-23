@@ -1,22 +1,45 @@
 'use client';
 
 import { useState } from 'react';
-import { Alert, Box, FormControl, InputLabel, MenuItem, Select, Stack, Switch, Typography } from '@mui/material';
+import Link from 'next/link';
+import { Alert, Box, Button, FormControl, InputLabel, MenuItem, Select, Stack, Switch, TextField, Typography } from '@mui/material';
+
+import type { UserSettingsDto } from '@edu-feed/shared';
+import { PRESET_FONT_STACKS } from '@edu-feed/shared';
 
 import { AppShell } from '../components/AppShell';
 import { ProtectedModeCard } from '../components/ProtectedModeCard';
 import { SectionCard } from '../components/SectionCard';
 import { getSavedAlbumsForViewer, getSettingsModel } from '../lib/demo';
-import { useAlbumsQuery, useUpdateSettingsMutation } from '../lib/api';
+import { useAlbumsQuery, useCreateAlbumMutation, useDeleteAlbumMutation, useUpdateSettingsMutation } from '../lib/api';
 import { useSessionViewer } from '../lib/session';
 
 export default function SettingsPage() {
   const model = getSettingsModel();
-  const { viewer } = useSessionViewer(model.viewer);
+  const { viewer, isAuthenticated } = useSessionViewer(model.viewer);
   const albumsQuery = useAlbumsQuery();
   const [updateSettings] = useUpdateSettingsMutation();
+  const [createAlbum, createAlbumState] = useCreateAlbumMutation();
+  const [deleteAlbum, deleteAlbumState] = useDeleteAlbumMutation();
   const [message, setMessage] = useState<string | null>(null);
+  const [messageSeverity, setMessageSeverity] = useState<'success' | 'error'>('success');
+  const [albumTitle, setAlbumTitle] = useState('');
+  const [albumDescription, setAlbumDescription] = useState('');
   const albums = albumsQuery.data?.albums || getSavedAlbumsForViewer();
+
+  async function saveSettings(
+    patch: Partial<UserSettingsDto>,
+    successMessage: string
+  ) {
+    try {
+      await updateSettings(patch).unwrap();
+      setMessageSeverity('success');
+      setMessage(successMessage);
+    } catch (error) {
+      setMessageSeverity('error');
+      setMessage(error instanceof Error ? error.message : 'Could not save the settings.');
+    }
+  }
 
   return (
     <AppShell title="Settings" subtitle="Visual presets, content protection, newsletters, and AI preferences." viewer={viewer}>
@@ -34,13 +57,25 @@ export default function SettingsPage() {
           <SectionCard title="Appearance" eyebrow="Inspired by the reference project">
             <Stack spacing={2}>
               <FormControl fullWidth>
+                <InputLabel>Interface language</InputLabel>
+                <Select
+                  label="Interface language"
+                  value={viewer.language}
+                  onChange={(event) => {
+                    void saveSettings({ language: event.target.value as typeof viewer.language }, 'Interface language saved.');
+                  }}
+                >
+                  <MenuItem value="en">English</MenuItem>
+                  <MenuItem value="bg">Bulgarian</MenuItem>
+                </Select>
+              </FormControl>
+              <FormControl fullWidth>
                 <InputLabel>Vibe</InputLabel>
                 <Select
                   label="Vibe"
                   value={viewer.vibePreset}
-                  onChange={async (event) => {
-                    await updateSettings({ vibePreset: event.target.value as typeof viewer.vibePreset }).unwrap().catch(() => undefined);
-                    setMessage('Vibe preference saved.');
+                  onChange={(event) => {
+                    void saveSettings({ vibePreset: event.target.value as typeof viewer.vibePreset }, 'Vibe preference saved.');
                   }}
                 >
                   <MenuItem value="museum">Museum</MenuItem>
@@ -55,22 +90,64 @@ export default function SettingsPage() {
                 <Select
                   label="Language mode"
                   value={viewer.contentLanguageMode}
-                  onChange={async (event) => {
-                    await updateSettings({ contentLanguageMode: event.target.value as typeof viewer.contentLanguageMode }).unwrap().catch(() => undefined);
-                    setMessage('Language mode saved.');
+                  onChange={(event) => {
+                    void saveSettings({ contentLanguageMode: event.target.value as typeof viewer.contentLanguageMode }, 'Language mode saved.');
                   }}
                 >
                   <MenuItem value="single">Single</MenuItem>
                   <MenuItem value="dual">Dual</MenuItem>
                 </Select>
               </FormControl>
+              <FormControl fullWidth>
+                <InputLabel>Theme mode</InputLabel>
+                <Select
+                  label="Theme mode"
+                  value={viewer.themeMode}
+                  onChange={(event) => {
+                    void saveSettings({ themeMode: event.target.value as typeof viewer.themeMode }, 'Theme mode saved.');
+                  }}
+                >
+                  <MenuItem value="light">Light</MenuItem>
+                  <MenuItem value="dark">Dark</MenuItem>
+                  <MenuItem value="system">System</MenuItem>
+                </Select>
+              </FormControl>
+              <FormControl fullWidth>
+                <InputLabel>Font</InputLabel>
+                <Select
+                  label="Font"
+                  value={viewer.fontFamily}
+                  onChange={(event) => {
+                    void saveSettings({ fontFamily: event.target.value }, 'Font family saved.');
+                  }}
+                >
+                  <MenuItem value={PRESET_FONT_STACKS.museum}>Museum serif</MenuItem>
+                  <MenuItem value={PRESET_FONT_STACKS.archive}>Archive sans</MenuItem>
+                  <MenuItem value={PRESET_FONT_STACKS.field_notes}>Field Notes sans</MenuItem>
+                  <MenuItem value={PRESET_FONT_STACKS.cinema}>Cinema display</MenuItem>
+                  <MenuItem value={PRESET_FONT_STACKS.naturalist}>Naturalist serif</MenuItem>
+                </Select>
+              </FormControl>
+              <FormControl fullWidth>
+                <InputLabel>Font size</InputLabel>
+                <Select
+                  label="Font size"
+                  value={viewer.fontScale}
+                  onChange={(event) => {
+                    void saveSettings({ fontScale: event.target.value as typeof viewer.fontScale }, 'Font size saved.');
+                  }}
+                >
+                  <MenuItem value="sm">Small</MenuItem>
+                  <MenuItem value="md">Medium</MenuItem>
+                  <MenuItem value="lg">Large</MenuItem>
+                </Select>
+              </FormControl>
               <Stack direction="row" alignItems="center" justifyContent="space-between">
                 <Typography>Images on/off</Typography>
                 <Switch
                   checked={viewer.imageMode === 'on'}
-                  onChange={async (_event, checked) => {
-                    await updateSettings({ imageMode: checked ? 'on' : 'off' }).unwrap().catch(() => undefined);
-                    setMessage('Image preference saved.');
+                  onChange={(_event, checked) => {
+                    void saveSettings({ imageMode: checked ? 'on' : 'off' }, 'Image preference saved.');
                   }}
                 />
               </Stack>
@@ -78,12 +155,24 @@ export default function SettingsPage() {
                 <Typography>Newsletter enabled</Typography>
                 <Switch
                   checked={viewer.newsletterEnabled}
-                  onChange={async (_event, checked) => {
-                    await updateSettings({ newsletterEnabled: checked }).unwrap().catch(() => undefined);
-                    setMessage('Newsletter preference saved.');
+                  onChange={(_event, checked) => {
+                    void saveSettings({ newsletterEnabled: checked }, 'Newsletter preference saved.');
                   }}
                 />
               </Stack>
+              <FormControl fullWidth>
+                <InputLabel>Newsletter cadence</InputLabel>
+                <Select
+                  label="Newsletter cadence"
+                  value={viewer.newsletterCadence}
+                  onChange={(event) => {
+                    void saveSettings({ newsletterCadence: event.target.value as typeof viewer.newsletterCadence }, 'Newsletter cadence saved.');
+                  }}
+                >
+                  <MenuItem value="weekly">Weekly</MenuItem>
+                  <MenuItem value="daily">Daily</MenuItem>
+                </Select>
+              </FormControl>
             </Stack>
           </SectionCard>
         </Box>
@@ -99,10 +188,83 @@ export default function SettingsPage() {
             </Typography>
             <Stack spacing={1.5} sx={{ mt: 2 }}>
               {albums.map((album) => (
-                <Typography key={album.id} variant="body2">
-                  {album.title}: {album.itemIds.length} items
-                </Typography>
+                <Stack
+                  key={album.id}
+                  direction={{ xs: 'column', sm: 'row' }}
+                  spacing={1}
+                  alignItems={{ xs: 'flex-start', sm: 'center' }}
+                  justifyContent="space-between"
+                >
+                  <Typography variant="body2">
+                    {album.title}: {album.itemIds.length} items
+                  </Typography>
+                  <Stack direction="row" spacing={1}>
+                    <Button component={Link} href={`/albums/${album.id}`} size="small" variant="outlined">
+                      Open
+                    </Button>
+                    <Button
+                      size="small"
+                      color="error"
+                      variant="outlined"
+                      disabled={!isAuthenticated || deleteAlbumState.isLoading}
+                      onClick={async () => {
+                        try {
+                          await deleteAlbum(album.id).unwrap();
+                          setMessageSeverity('success');
+                          setMessage('Album deleted.');
+                        } catch (error) {
+                          setMessageSeverity('error');
+                          setMessage(error instanceof Error ? error.message : 'Could not delete the album.');
+                        }
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </Stack>
+                </Stack>
               ))}
+            </Stack>
+            <Stack spacing={1.5} sx={{ mt: 2.5 }}>
+              <TextField
+                label="Album title"
+                value={albumTitle}
+                onChange={(event) => setAlbumTitle(event.target.value)}
+                disabled={!isAuthenticated || createAlbumState.isLoading}
+              />
+              <TextField
+                label="Album description"
+                value={albumDescription}
+                onChange={(event) => setAlbumDescription(event.target.value)}
+                disabled={!isAuthenticated || createAlbumState.isLoading}
+                multiline
+                minRows={2}
+              />
+              <Button
+                variant="contained"
+                disabled={!isAuthenticated || !albumTitle.trim() || createAlbumState.isLoading}
+                onClick={async () => {
+                  try {
+                    await createAlbum({
+                      title: albumTitle.trim(),
+                      description: albumDescription.trim()
+                    }).unwrap();
+                    setAlbumTitle('');
+                    setAlbumDescription('');
+                    setMessageSeverity('success');
+                    setMessage('Album created.');
+                  } catch (error) {
+                    setMessageSeverity('error');
+                    setMessage(error instanceof Error ? error.message : 'Could not create the album.');
+                  }
+                }}
+              >
+                {createAlbumState.isLoading ? 'Creating...' : 'Create album'}
+              </Button>
+              {!isAuthenticated ? (
+                <Typography variant="caption" color="text.secondary">
+                  Sign in to create and manage albums.
+                </Typography>
+              ) : null}
             </Stack>
           </SectionCard>
         </Box>
@@ -110,6 +272,15 @@ export default function SettingsPage() {
         <Box>
           <SectionCard title="AI preferences" eyebrow="Per-account controls">
             <Stack spacing={1.5}>
+              <Stack direction="row" alignItems="center" justifyContent="space-between">
+                <Typography>Ask-AI enabled</Typography>
+                <Switch
+                  checked={viewer.askAiEnabled}
+                  onChange={(_event, checked) => {
+                    void saveSettings({ askAiEnabled: checked }, 'Ask-AI preference saved.');
+                  }}
+                />
+              </Stack>
               <Typography variant="body2" color="text.secondary">
                 Ask-AI is enabled. Summaries, translation, and article Q&A stay bounded by admin-configured provider and budget rules.
               </Typography>
@@ -120,7 +291,7 @@ export default function SettingsPage() {
           </SectionCard>
         </Box>
       </Box>
-      {message ? <Alert sx={{ mt: 3 }} severity="success">{message}</Alert> : null}
+      {message ? <Alert sx={{ mt: 3 }} severity={messageSeverity}>{message}</Alert> : null}
     </AppShell>
   );
 }

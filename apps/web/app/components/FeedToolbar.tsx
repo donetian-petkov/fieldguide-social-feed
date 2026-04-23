@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import KeyboardDoubleArrowUpRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowUpRounded';
@@ -15,7 +15,6 @@ import { FEED_ORDER } from '../lib/demo';
 
 export function FeedToolbar({ feed, language }: { feed: SubjectFeed; language: 'en' | 'bg' }) {
   const router = useRouter();
-  const pathname = usePathname();
   const touchStartX = useRef<number | null>(null);
   const currentIndex = FEED_ORDER.indexOf(feed);
 
@@ -86,7 +85,6 @@ export function FeedToolbar({ feed, language }: { feed: SubjectFeed; language: '
             sx={{ fontWeight: 700 }}
           />
         ))}
-        <Chip label={pathname} variant="outlined" />
       </Stack>
     </Stack>
   );

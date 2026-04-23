@@ -21,6 +21,9 @@ const envSchema = z.object({
   TRANSLATION_MODEL: z.string().default('gpt-4.1-mini'),
   ASK_MODEL: z.string().default('gpt-4.1-mini'),
   NEWSLETTER_MODEL: z.string().default('gpt-4.1-mini'),
+  OPENAI_API_KEY: z.string().optional().default(''),
+  ANTHROPIC_API_KEY: z.string().optional().default(''),
+  OPENROUTER_API_KEY: z.string().optional().default(''),
   ENABLE_EMAIL: z
     .string()
     .optional()

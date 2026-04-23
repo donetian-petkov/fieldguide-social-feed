@@ -14,7 +14,9 @@ type NewsletterJobPayload = {
 export interface AppQueues {
   scheduleSource(sourceId: string, feedUrl: string, pollIntervalSec?: number): Promise<void>;
   runSourceResync(sourceId: string, feedUrl: string): Promise<void>;
+  removeSourceSchedule(sourceId: string): Promise<void>;
   scheduleNewsletter(username: string, mode?: 'weekly' | 'daily'): Promise<void>;
+  syncNewsletterSchedule(username: string, enabled: boolean, mode?: 'weekly' | 'daily'): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -23,7 +25,11 @@ export class NoopQueues implements AppQueues {
 
   async runSourceResync() {}
 
+  async removeSourceSchedule() {}
+
   async scheduleNewsletter() {}
+
+  async syncNewsletterSchedule() {}
 
   async close() {}
 }
@@ -79,6 +85,15 @@ export class BullMqAppQueues implements AppQueues {
     );
   }
 
+  async removeSourceSchedule(sourceId: string) {
+    const repeatableJobs = await this.ingestionQueue.getRepeatableJobs();
+    await Promise.all(
+      repeatableJobs
+        .filter((job) => job.id === `source:${sourceId}`)
+        .map((job) => this.ingestionQueue.removeRepeatableByKey(job.key))
+    );
+  }
+
   async scheduleNewsletter(username: string, mode: 'weekly' | 'daily' = 'weekly') {
     await this.newsletterQueue.add(
       `newsletter:${username}:${mode}`,
@@ -95,6 +110,19 @@ export class BullMqAppQueues implements AppQueues {
         removeOnFail: 50
       }
     );
+  }
+
+  async syncNewsletterSchedule(username: string, enabled: boolean, mode: 'weekly' | 'daily' = 'weekly') {
+    const repeatableJobs = await this.newsletterQueue.getRepeatableJobs();
+    await Promise.all(
+      repeatableJobs
+        .filter((job) => job.id === `newsletter:${username}:daily` || job.id === `newsletter:${username}:weekly`)
+        .map((job) => this.newsletterQueue.removeRepeatableByKey(job.key))
+    );
+
+    if (enabled) {
+      await this.scheduleNewsletter(username, mode);
+    }
   }
 
   async close() {

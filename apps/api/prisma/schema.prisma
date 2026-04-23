@@ -131,6 +131,7 @@ model User {
   albums             Album[]
   saves              SavedItem[]
   hiddenItems        HiddenItem[]
+  itemViews          ItemView[]
   submissions        Submission[]
   reviewedItems      Submission[]         @relation("SubmissionReviewer")
   passwordResetTokens PasswordResetToken[]
@@ -161,6 +162,7 @@ model UserSettings {
   themeMode            ThemeMode           @default(light)
   contentMode          ContentMode         @default(standard)
   newsletterEnabled    Boolean             @default(false)
+  newsletterCadence    NewsletterCadence   @default(weekly)
   askAiEnabled         Boolean             @default(true)
   protectedModeEnabled Boolean             @default(true)
   user                 User                @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -207,11 +209,23 @@ model ContentItem {
   publishedAt     DateTime
   originalTitle   String
   originalSummary String         @db.Text
+  summaryAiProvider String?
+  summaryAiModel    String?
+  summaryAiInputTokens Int?
+  summaryAiOutputTokens Int?
+  summaryAiTotalCostUsd Decimal? @db.Decimal(10, 4)
+  summaryAiGeneratedAt DateTime?
   bodyMarkdown    String?        @db.LongText
   coverImageUrl   String
   externalUrl     String?
   youtubeVideoId  String?
   subject         SubjectTag
+  classificationAiProvider String?
+  classificationAiModel    String?
+  classificationAiInputTokens Int?
+  classificationAiOutputTokens Int?
+  classificationAiTotalCostUsd Decimal? @db.Decimal(10, 4)
+  classificationAiGeneratedAt DateTime?
   audience        AudienceLabel
   commentsLocked  Boolean        @default(false)
   hiddenByDefault Boolean        @default(false)
@@ -226,6 +240,7 @@ model ContentItem {
   comments        Comment[]
   saves           SavedItem[]
   hiddenItems     HiddenItem[]
+  itemViews       ItemView[]
   albumItems      AlbumItem[]
   pinnedSlots     PinnedSlot[]
   aiUsage         AiUsageLedger[]
@@ -233,13 +248,19 @@ model ContentItem {
 }
 
 model ContentTranslation {
-  id       String            @id @default(cuid())
-  itemId   String
-  language InterfaceLanguage
-  title    String
-  summary  String            @db.Text
-  slug     String
-  item     ContentItem       @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  id          String            @id @default(cuid())
+  itemId      String
+  language    InterfaceLanguage
+  title       String
+  summary     String            @db.Text
+  slug        String
+  aiProvider  String?
+  aiModel     String?
+  aiInputTokens Int?
+  aiOutputTokens Int?
+  aiTotalCostUsd Decimal?       @db.Decimal(10, 4)
+  aiGeneratedAt DateTime?
+  item        ContentItem       @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@unique([itemId, language])
 }
@@ -307,6 +328,19 @@ model HiddenItem {
   item      ContentItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@id([userId, itemId])
+}
+
+model ItemView {
+  userId         String
+  itemId         String
+  viewCount      Int         @default(1)
+  firstViewedAt  DateTime    @default(now())
+  lastViewedAt   DateTime    @default(now())
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item           ContentItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([userId, itemId])
+  @@index([itemId])
 }
 
 model Submission {
@@ -401,6 +435,18 @@ model NewsletterDelivery {
   status            DeliveryStatus       @default(queued)
   subjectLine       String
   summaryText       String?              @db.LongText
+  selectionAiProvider String?
+  selectionAiModel    String?
+  selectionAiInputTokens Int?
+  selectionAiOutputTokens Int?
+  selectionAiTotalCostUsd Decimal?      @db.Decimal(10, 4)
+  selectionAiGeneratedAt DateTime?
+  summaryAiProvider String?
+  summaryAiModel    String?
+  summaryAiInputTokens Int?
+  summaryAiOutputTokens Int?
+  summaryAiTotalCostUsd Decimal?        @db.Decimal(10, 4)
+  summaryAiGeneratedAt DateTime?
   providerMessageId String?
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt

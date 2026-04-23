@@ -33,10 +33,24 @@ const fontByPreset: Record<VibePreset, string> = {
   naturalist: '"Cormorant Garamond", "Georgia", serif'
 };
 
-export function buildTheme(vibePreset: VibePreset, themeMode: ThemeMode) {
+const fontSizeByScale = {
+  sm: 13,
+  md: 14,
+  lg: 16
+} as const;
+
+export function buildTheme(
+  vibePreset: VibePreset,
+  themeMode: ThemeMode,
+  options?: {
+    fontFamily?: string;
+    fontScale?: 'sm' | 'md' | 'lg';
+  }
+) {
   const effectiveMode = themeMode === 'system' ? 'light' : themeMode;
   const palette = presetPalette[vibePreset][effectiveMode];
-  const fontFamily = fontByPreset[vibePreset];
+  const fontFamily = options?.fontFamily || fontByPreset[vibePreset];
+  const fontSize = fontSizeByScale[options?.fontScale || 'md'];
 
   return createTheme({
     palette: {
@@ -56,6 +70,7 @@ export function buildTheme(vibePreset: VibePreset, themeMode: ThemeMode) {
     },
     typography: {
       fontFamily,
+      fontSize,
       h1: { fontFamily, fontWeight: 700 },
       h2: { fontFamily, fontWeight: 700 },
       h3: { fontFamily, fontWeight: 700 },

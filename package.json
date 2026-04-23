@@ -16,7 +16,8 @@
     "dev:api": "npm run dev -w @edu-feed/api",
     "dev:worker": "npm run dev -w @edu-feed/worker",
     "build": "npm run build -w @edu-feed/shared && npm run build -w @edu-feed/api && npm run build -w @edu-feed/worker && npm run build -w @edu-feed/web",
-    "test": "npm run test -w @edu-feed/shared && npm run test -w @edu-feed/api && npm run test -w @edu-feed/web",
+    "test": "npm run test -w @edu-feed/shared && npm run test -w @edu-feed/api && npm run test -w @edu-feed/worker && npm run test -w @edu-feed/web",
+    "test:e2e": "npm run build -w @edu-feed/shared && npm run build -w @edu-feed/api && npm run build -w @edu-feed/web && npm run test:e2e -w @edu-feed/web",
     "prisma:generate": "npm run prisma:generate -w @edu-feed/api",
     "prisma:migrate": "npm run prisma:migrate -w @edu-feed/api",
     "seed": "npm run seed -w @edu-feed/api"

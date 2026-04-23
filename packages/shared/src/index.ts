@@ -38,6 +38,7 @@ export const aiProviderSchema = z.enum(['openai', 'anthropic', 'openrouter']);
 export const aiBudgetModeSchema = z.enum(['low', 'standard', 'high']);
 export const sourceTypeSchema = z.enum(['editorial', 'community', 'adult_educational']);
 export const submissionStatusSchema = z.enum(['pending', 'approved', 'rejected']);
+export const newsletterCadenceSchema = z.enum(['daily', 'weekly']);
 
 export const subjectFeedSchema = z.enum([
   'history',
@@ -56,7 +57,18 @@ export const translationSchema = z.object({
   language: interfaceLanguageSchema,
   title: z.string(),
   summary: z.string(),
-  slug: z.string()
+  slug: z.string(),
+  aiAudit: z
+    .object({
+      provider: aiProviderSchema,
+      model: z.string(),
+      inputTokens: z.number().int().nonnegative(),
+      outputTokens: z.number().int().nonnegative(),
+      totalCostUsd: z.number().nonnegative(),
+      createdAt: z.string()
+    })
+    .nullable()
+    .optional()
 });
 
 export const sourceDefinitionSchema = z.object({
@@ -112,7 +124,40 @@ export const contentItemSchema = z.object({
     summaryProvider: aiProviderSchema,
     summaryModel: z.string(),
     translationProvider: aiProviderSchema,
-    translationModel: z.string()
+    translationModel: z.string(),
+    summaryAudit: z
+      .object({
+        provider: aiProviderSchema,
+        model: z.string(),
+        inputTokens: z.number().int().nonnegative(),
+        outputTokens: z.number().int().nonnegative(),
+        totalCostUsd: z.number().nonnegative(),
+        createdAt: z.string()
+      })
+      .nullable()
+      .optional(),
+    translationAudit: z
+      .object({
+        provider: aiProviderSchema,
+        model: z.string(),
+        inputTokens: z.number().int().nonnegative(),
+        outputTokens: z.number().int().nonnegative(),
+        totalCostUsd: z.number().nonnegative(),
+        createdAt: z.string()
+      })
+      .nullable()
+      .optional(),
+    classificationAudit: z
+      .object({
+        provider: aiProviderSchema,
+        model: z.string(),
+        inputTokens: z.number().int().nonnegative(),
+        outputTokens: z.number().int().nonnegative(),
+        totalCostUsd: z.number().nonnegative(),
+        createdAt: z.string()
+      })
+      .nullable()
+      .optional()
   })
 });
 
@@ -158,6 +203,7 @@ export const userSettingsDtoSchema = z.object({
   themeMode: themeModeSchema,
   contentMode: contentModeSchema,
   newsletterEnabled: z.boolean(),
+  newsletterCadence: newsletterCadenceSchema,
   askAiEnabled: z.boolean(),
   protectedModeEnabled: z.boolean()
 });
@@ -238,6 +284,7 @@ export type SubjectTag = z.infer<typeof subjectTagSchema>;
 export type VibePreset = z.infer<typeof vibePresetSchema>;
 export type AIProvider = z.infer<typeof aiProviderSchema>;
 export type AIBudgetMode = z.infer<typeof aiBudgetModeSchema>;
+export type NewsletterCadence = z.infer<typeof newsletterCadenceSchema>;
 export type SubjectFeed = z.infer<typeof subjectFeedSchema>;
 export type SourceDefinition = z.infer<typeof sourceDefinitionSchema>;
 export type ContentTag = z.infer<typeof contentTagSchema>;
@@ -307,10 +354,70 @@ export const DEMO_SOURCES: SourceDefinition[] = [
     kind: 'rss',
     status: 'active',
     sourceType: 'editorial',
-    subjects: ['art', 'history'],
+    subjects: ['art', 'history', 'video'],
     defaultAudience: 'kid_safe',
     language: 'en',
     description: 'Art history essays and teaching resources.'
+  },
+  {
+    id: 'src-smithsonian',
+    name: 'Smithsonian Magazine',
+    slug: 'smithsonian-magazine',
+    iconUrl: 'https://www.smithsonianmag.com/favicon.ico',
+    siteUrl: 'https://www.smithsonianmag.com/',
+    feedUrl: 'https://www.smithsonianmag.com/rss/',
+    kind: 'rss',
+    status: 'active',
+    sourceType: 'editorial',
+    subjects: ['history'],
+    defaultAudience: 'kid_safe',
+    language: 'en',
+    description: 'Museum-backed stories on history, archaeology, and culture.'
+  },
+  {
+    id: 'src-national-geographic-history',
+    name: 'National Geographic History & Culture',
+    slug: 'national-geographic-history-culture',
+    iconUrl: 'https://www.nationalgeographic.com/favicon.ico',
+    siteUrl: 'https://www.nationalgeographic.com/history/',
+    feedUrl: 'https://www.nationalgeographic.com/history/',
+    kind: 'custom',
+    status: 'active',
+    sourceType: 'editorial',
+    subjects: ['history', 'country_knowledge'],
+    defaultAudience: 'kid_safe',
+    language: 'en',
+    description: 'Queued for adapter-backed ingestion of National Geographic history and culture features.'
+  },
+  {
+    id: 'src-hyperallergic',
+    name: 'Hyperallergic',
+    slug: 'hyperallergic',
+    iconUrl: 'https://hyperallergic.com/favicon.ico',
+    siteUrl: 'https://hyperallergic.com/',
+    feedUrl: 'https://hyperallergic.com/feed/',
+    kind: 'rss',
+    status: 'active',
+    sourceType: 'editorial',
+    subjects: ['art'],
+    defaultAudience: 'standard_only',
+    language: 'en',
+    description: 'Art criticism, exhibitions, and cultural commentary.'
+  },
+  {
+    id: 'src-artnews',
+    name: 'ARTnews',
+    slug: 'artnews',
+    iconUrl: 'https://www.artnews.com/favicon.ico',
+    siteUrl: 'https://www.artnews.com/',
+    feedUrl: 'https://www.artnews.com/feed/',
+    kind: 'rss',
+    status: 'active',
+    sourceType: 'editorial',
+    subjects: ['art'],
+    defaultAudience: 'standard_only',
+    language: 'en',
+    description: 'Art market, artist, and museum coverage.'
   },
   {
     id: 'src-book-riot',
@@ -328,6 +435,36 @@ export const DEMO_SOURCES: SourceDefinition[] = [
     description: 'Books, reading culture, and literary discovery.'
   },
   {
+    id: 'src-literary-hub',
+    name: 'Literary Hub',
+    slug: 'literary-hub',
+    iconUrl: 'https://lithub.com/favicon.ico',
+    siteUrl: 'https://lithub.com/',
+    feedUrl: 'https://lithub.com/feed/',
+    kind: 'rss',
+    status: 'active',
+    sourceType: 'editorial',
+    subjects: ['books'],
+    defaultAudience: 'standard_only',
+    language: 'en',
+    description: 'Essays, interviews, and criticism from the literary world.'
+  },
+  {
+    id: 'src-kirkus',
+    name: 'Kirkus Reviews',
+    slug: 'kirkus-reviews',
+    iconUrl: 'https://www.kirkusreviews.com/favicon.ico',
+    siteUrl: 'https://www.kirkusreviews.com/discover-books/',
+    feedUrl: 'https://www.kirkusreviews.com/feed/',
+    kind: 'rss',
+    status: 'active',
+    sourceType: 'editorial',
+    subjects: ['books'],
+    defaultAudience: 'standard_only',
+    language: 'en',
+    description: 'Book discovery, reviews, and publishing coverage.'
+  },
+  {
     id: 'src-screen-daily',
     name: 'Screen Daily',
     slug: 'screen-daily',
@@ -341,6 +478,21 @@ export const DEMO_SOURCES: SourceDefinition[] = [
     defaultAudience: 'standard_only',
     language: 'en',
     description: 'Film industry reporting and festival coverage.'
+  },
+  {
+    id: 'src-film-stage',
+    name: 'The Film Stage',
+    slug: 'the-film-stage',
+    iconUrl: 'https://thefilmstage.com/favicon.ico',
+    siteUrl: 'https://thefilmstage.com/',
+    feedUrl: 'https://thefilmstage.com/feed/',
+    kind: 'rss',
+    status: 'active',
+    sourceType: 'editorial',
+    subjects: ['movies'],
+    defaultAudience: 'standard_only',
+    language: 'en',
+    description: 'Film criticism, festival dispatches, and trailer coverage.'
   },
   {
     id: 'src-atlas-obscura',
@@ -358,6 +510,21 @@ export const DEMO_SOURCES: SourceDefinition[] = [
     description: 'Curiosities, geography, traditions, and hidden places.'
   },
   {
+    id: 'src-geography-now',
+    name: 'Geography Now',
+    slug: 'geography-now',
+    iconUrl: 'https://www.geographynow.com/favicon.ico',
+    siteUrl: 'https://www.geographynow.com/pages/about-geography-now',
+    feedUrl: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCmmPgObSUPw1HL2l6H4ffA',
+    kind: 'youtube',
+    status: 'active',
+    sourceType: 'editorial',
+    subjects: ['video', 'country_knowledge'],
+    defaultAudience: 'kid_safe',
+    language: 'en',
+    description: 'Country explainers and educational channel updates from Geography Now.'
+  },
+  {
     id: 'src-petapixel',
     name: 'PetaPixel',
     slug: 'petapixel',
@@ -373,6 +540,21 @@ export const DEMO_SOURCES: SourceDefinition[] = [
     description: 'Photography techniques, gear, and visual culture.'
   },
   {
+    id: 'src-dpreview',
+    name: 'DPReview',
+    slug: 'dpreview',
+    iconUrl: 'https://www.dpreview.com/favicon.ico',
+    siteUrl: 'https://www.dpreview.com/',
+    feedUrl: 'https://www.dpreview.com/feeds/news.xml',
+    kind: 'rss',
+    status: 'active',
+    sourceType: 'editorial',
+    subjects: ['photography'],
+    defaultAudience: 'standard_only',
+    language: 'en',
+    description: 'Camera reviews, photography news, and image-making technique.'
+  },
+  {
     id: 'src-radio-bulgaria',
     name: 'Radio Bulgaria',
     slug: 'radio-bulgaria',
@@ -384,8 +566,68 @@ export const DEMO_SOURCES: SourceDefinition[] = [
     sourceType: 'editorial',
     subjects: ['country_knowledge', 'history', 'art'],
     defaultAudience: 'kid_safe',
-    language: 'bg',
+    language: 'en',
     description: 'Bulgarian culture, society, and heritage in English and Bulgarian.'
+  },
+  {
+    id: 'src-bta-culture',
+    name: 'BTA Culture',
+    slug: 'bta-culture',
+    iconUrl: 'https://www.bta.bg/favicon.ico',
+    siteUrl: 'https://www.bta.bg/en/news/culture',
+    feedUrl: 'https://www.bta.bg/en/news/culture',
+    kind: 'custom',
+    status: 'active',
+    sourceType: 'editorial',
+    subjects: ['country_knowledge', 'art'],
+    defaultAudience: 'kid_safe',
+    language: 'en',
+    description: 'Queued for adapter-backed Bulgarian cultural reporting from BTA.'
+  },
+  {
+    id: 'src-national-geographic-animals',
+    name: 'National Geographic Animals',
+    slug: 'national-geographic-animals',
+    iconUrl: 'https://www.nationalgeographic.com/favicon.ico',
+    siteUrl: 'https://www.nationalgeographic.com/animals/',
+    feedUrl: 'https://www.nationalgeographic.com/animals/',
+    kind: 'custom',
+    status: 'active',
+    sourceType: 'editorial',
+    subjects: ['nature'],
+    defaultAudience: 'kid_safe',
+    language: 'en',
+    description: 'Queued for adapter-backed wildlife and animal coverage from National Geographic.'
+  },
+  {
+    id: 'src-bbc-earth',
+    name: 'BBC Earth',
+    slug: 'bbc-earth',
+    iconUrl: 'https://www.bbcearth.com/favicon.ico',
+    siteUrl: 'https://www.bbcearth.com/our-planet-earth',
+    feedUrl: 'https://www.bbcearth.com/our-planet-earth',
+    kind: 'custom',
+    status: 'active',
+    sourceType: 'editorial',
+    subjects: ['nature'],
+    defaultAudience: 'kid_safe',
+    language: 'en',
+    description: 'Queued for adapter-backed BBC Earth explainers and natural world stories.'
+  },
+  {
+    id: 'src-mongabay',
+    name: 'Mongabay',
+    slug: 'mongabay',
+    iconUrl: 'https://news.mongabay.com/favicon.ico',
+    siteUrl: 'https://news.mongabay.com/',
+    feedUrl: 'https://news.mongabay.com/feed/',
+    kind: 'rss',
+    status: 'active',
+    sourceType: 'editorial',
+    subjects: ['nature'],
+    defaultAudience: 'kid_safe',
+    language: 'en',
+    description: 'Environmental reporting, biodiversity coverage, and conservation news.'
   },
   {
     id: 'src-crash-course',
@@ -1012,6 +1254,7 @@ export const DEMO_USERS: UserSettingsDto[] = [
     themeMode: 'light',
     contentMode: 'standard',
     newsletterEnabled: true,
+    newsletterCadence: 'weekly',
     askAiEnabled: true,
     protectedModeEnabled: true
   },
@@ -1028,6 +1271,7 @@ export const DEMO_USERS: UserSettingsDto[] = [
     themeMode: 'dark',
     contentMode: 'standard',
     newsletterEnabled: false,
+    newsletterCadence: 'weekly',
     askAiEnabled: true,
     protectedModeEnabled: true
   }
@@ -1058,3 +1302,5 @@ export function filterItemsForFeed(
     return item.subjects.includes(feed.replace('-', '_') as SubjectTag);
   });
 }
+
+export * from './ai-runtime.js';

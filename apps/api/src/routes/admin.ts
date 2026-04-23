@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { aiModelConfigSchema, sourceDefinitionSchema } from '@edu-feed/shared';
+import { aiModelConfigSchema, sourceDefinitionSchema, userRoleSchema } from '@edu-feed/shared';
 
 import type { AppQueues } from '../lib/queues.js';
 import type { AppStore } from '../lib/store.js';
@@ -24,6 +24,10 @@ const lockBodySchema = z.object({
 
 const suspendBodySchema = z.object({
   suspended: z.boolean().default(true)
+});
+
+const userRoleBodySchema = z.object({
+  role: userRoleSchema
 });
 
 const submissionReviewSchema = z.object({
@@ -62,6 +66,25 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
       app.log.warn({ error, sourceId: source.id }, 'Failed to register source polling job');
     });
     return { source };
+  });
+
+  app.patch('/v1/admin/sources/:id', async (request) => {
+    const params = request.params as { id: string };
+    const parsed = sourceDefinitionSchema.omit({ id: true }).partial().parse(request.body || {});
+    return {
+      source: await options.store.updateSource(params.id, parsed)
+    };
+  });
+
+  app.delete('/v1/admin/sources/:id', async (request) => {
+    const params = request.params as { id: string };
+    await options.store.deleteSource(params.id);
+    await options.queues.removeSourceSchedule(params.id).catch((error) => {
+      app.log.warn({ error, sourceId: params.id }, 'Failed to remove source polling job');
+    });
+    return {
+      ok: true
+    };
   });
 
   app.post('/v1/admin/sources/:id/resync', async (request, reply) => {
@@ -117,6 +140,14 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
     const parsed = suspendBodySchema.parse(request.body || {});
     return {
       user: await options.store.suspendUser(params.id, parsed.suspended)
+    };
+  });
+
+  app.post('/v1/admin/users/:id/role', async (request) => {
+    const params = request.params as { id: string };
+    const parsed = userRoleBodySchema.parse(request.body || {});
+    return {
+      user: await options.store.setUserRole(params.id, parsed.role)
     };
   });
 

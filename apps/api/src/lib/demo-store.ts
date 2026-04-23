@@ -14,6 +14,7 @@ import type {
   SourceDefinition,
   SubjectFeed,
   SubmissionDto,
+  UserRole,
   UserSettingsDto
 } from '@edu-feed/shared';
 import {
@@ -71,6 +72,13 @@ type AdminSnapshot = {
   aiUsage: AiUsageSnapshot[];
 };
 
+type AlbumDetail = {
+  album: AlbumDto;
+  items: ContentItem[];
+};
+
+const COMMENT_EDIT_WINDOW_MS = 15 * 60 * 1000;
+
 export class DemoStore {
   private readonly sessionTtlMs: number;
 
@@ -114,6 +122,11 @@ export class DemoStore {
     ['admin', new Set()]
   ]);
 
+  private itemViewsByUser = new Map<string, Map<string, number>>([
+    ['alex', new Map([['item-sutton-hoo', 2], ['item-vermeer', 1]])],
+    ['admin', new Map([['item-nature', 1]])]
+  ]);
+
   private removedItemIds = new Set<string>();
 
   private credentials = new Map<string, string>([
@@ -147,6 +160,7 @@ export class DemoStore {
         themeMode: 'light',
         contentMode: 'standard',
         newsletterEnabled: false,
+        newsletterCadence: 'weekly',
         askAiEnabled: true,
         protectedModeEnabled: true
       });
@@ -186,6 +200,7 @@ export class DemoStore {
       themeMode: 'light',
       contentMode: 'standard',
       newsletterEnabled: false,
+      newsletterCadence: 'weekly',
       askAiEnabled: true,
       protectedModeEnabled: true
     };
@@ -194,6 +209,7 @@ export class DemoStore {
     this.userEmails.set(username, `${username}@example.com`);
     this.savedByUser.set(username, new Set());
     this.hiddenByUser.set(username, new Set());
+    this.itemViewsByUser.set(username, new Map());
     const sessionId = this.createSession(username);
     return {
       sessionId,
@@ -335,6 +351,16 @@ export class DemoStore {
     return item;
   }
 
+  recordItemView(username: string, itemId: string) {
+    this.requireUser(username);
+    const item = this.items.find((entry) => entry.id === itemId || entry.slug === itemId);
+    if (!item) throw new Error('Item not found.');
+    const views = this.itemViewsByUser.get(username) || new Map<string, number>();
+    views.set(item.id, (views.get(item.id) || 0) + 1);
+    this.itemViewsByUser.set(username, views);
+    return { ok: true };
+  }
+
   getProfileItems(username: string) {
     return this.items.filter((item) => item.authorUsername === username && !this.removedItemIds.has(item.id));
   }
@@ -393,6 +419,17 @@ export class DemoStore {
     return this.albums.filter((album) => album.ownerUsername === username);
   }
 
+  getAlbum(username: string, albumId: string) {
+    const album = this.albums.find((entry) => entry.id === albumId && entry.ownerUsername === username) || null;
+    if (!album) return null;
+    return {
+      album,
+      items: album.itemIds
+        .map((itemId) => this.items.find((entry) => entry.id === itemId))
+        .filter(Boolean) as ContentItem[]
+    } satisfies AlbumDetail;
+  }
+
   createAlbum(username: string, title: string, description: string) {
     const nextAlbum: AlbumDto = {
       id: `album-${randomUUID()}`,
@@ -406,6 +443,48 @@ export class DemoStore {
     };
     this.albums.push(nextAlbum);
     return nextAlbum;
+  }
+
+  updateAlbum(
+    username: string,
+    albumId: string,
+    patch: Partial<Pick<AlbumDto, 'title' | 'description' | 'coverItemId' | 'itemIds'>>
+  ) {
+    const album = this.albums.find((entry) => entry.id === albumId && entry.ownerUsername === username);
+    if (!album) throw new Error('Album not found.');
+    if (patch.itemIds) {
+      const allowedIds = new Set(album.itemIds);
+      if (new Set(patch.itemIds).size !== patch.itemIds.length) {
+        throw new Error('Album item order cannot contain duplicates.');
+      }
+      if (patch.itemIds.some((itemId) => !allowedIds.has(itemId))) {
+        throw new Error('Album order can only include existing album items.');
+      }
+      album.itemIds = [...patch.itemIds];
+    }
+    if (patch.coverItemId !== undefined) {
+      if (patch.coverItemId && !album.itemIds.includes(patch.coverItemId)) {
+        throw new Error('Cover item must belong to the album.');
+      }
+      album.coverItemId = patch.coverItemId;
+    }
+    if (patch.title !== undefined) album.title = patch.title;
+    if (patch.description !== undefined) album.description = patch.description;
+    if (!album.coverItemId && album.itemIds[0]) {
+      album.coverItemId = album.itemIds[0];
+    }
+    if (album.coverItemId && !album.itemIds.includes(album.coverItemId)) {
+      album.coverItemId = album.itemIds[0] || null;
+    }
+    album.updatedAt = new Date().toISOString();
+    return album;
+  }
+
+  deleteAlbum(username: string, albumId: string) {
+    const index = this.albums.findIndex((entry) => entry.id === albumId && entry.ownerUsername === username);
+    if (index < 0) throw new Error('Album not found.');
+    this.albums.splice(index, 1);
+    return { ok: true as const };
   }
 
   addAlbumItem(username: string, albumId: string, itemId: string) {
@@ -434,14 +513,28 @@ export class DemoStore {
     return submission;
   }
 
-  askAi(itemId: string, question: string, language: InterfaceLanguage) {
+  askAi(itemId: string, question: string, language: InterfaceLanguage, username?: string | null) {
     const item = this.items.find((entry) => entry.id === itemId);
     if (!item) throw new Error('Item not found.');
+    const viewer = username ? this.requireUser(username) : null;
+    if (viewer && !viewer.askAiEnabled) {
+      throw new Error('Ask-AI is disabled in your settings.');
+    }
     const translation = resolveTranslation(item, language);
+    const modeLead =
+      viewer?.contentMode === 'kid'
+        ? language === 'bg'
+          ? 'Ще запазя отговора детски, без графични или зрели подробности.'
+          : 'I will keep the answer kid-safe, without graphic or mature detail.'
+        : viewer?.contentMode === 'standard'
+          ? language === 'bg'
+            ? 'Ще остана на общообразователно ниво и ще избегна ненужни смущаващи подробности.'
+            : 'I will keep the answer educational and avoid unnecessary disturbing detail.'
+          : '';
     const answer =
       language === 'bg'
-        ? `За "${translation?.title}" бих започнал с произхода на източника, ключовия аргумент и какви допълнителни първични или музейни материали можеш да потърсиш. Въпросът ти беше: ${question}`
-        : `For "${translation?.title}", start with the source context, the central claim, and which museum, archive, or primary materials could deepen the story. Your question was: ${question}`;
+        ? `${modeLead} За "${translation?.title}" бих започнал с произхода на източника, ключовия аргумент и какви допълнителни първични или музейни материали можеш да потърсиш. Въпросът ти беше: ${question}`
+        : `${modeLead} For "${translation?.title}", start with the source context, the central claim, and which museum, archive, or primary materials could deepen the story. Your question was: ${question}`;
 
     return {
       answer,
@@ -479,6 +572,53 @@ export class DemoStore {
     };
     this.sources.unshift(nextSource);
     return nextSource;
+  }
+
+  updateSource(sourceId: string, patch: Partial<Omit<SourceDefinition, 'id'>>) {
+    const source = this.sources.find((entry) => entry.id === sourceId);
+    if (!source) throw new Error('Source not found.');
+    Object.assign(source, patch);
+    return source;
+  }
+
+  deleteSource(sourceId: string) {
+    const sourceIndex = this.sources.findIndex((entry) => entry.id === sourceId);
+    if (sourceIndex < 0) throw new Error('Source not found.');
+
+    const removedSource = this.sources[sourceIndex]!;
+    this.sources.splice(sourceIndex, 1);
+
+    const removedItemIds = this.items
+      .filter((entry) => entry.sourceId === removedSource.id)
+      .map((entry) => entry.id);
+    const removedItemIdSet = new Set(removedItemIds);
+
+    this.items = this.items.filter((entry) => entry.sourceId !== removedSource.id);
+    this.comments = this.comments.filter((entry) => !removedItemIdSet.has(entry.itemId));
+    this.pinnedSlots = this.pinnedSlots.filter((entry) => !removedItemIdSet.has(entry.itemId));
+
+    this.albums = this.albums.map((album) => {
+      const nextItemIds = album.itemIds.filter((itemId) => !removedItemIdSet.has(itemId));
+      return {
+        ...album,
+        itemIds: nextItemIds,
+        coverItemId: album.coverItemId && removedItemIdSet.has(album.coverItemId) ? nextItemIds[0] || null : album.coverItemId,
+        updatedAt: new Date().toISOString()
+      };
+    });
+
+    for (const saved of this.savedByUser.values()) {
+      for (const itemId of removedItemIds) {
+        saved.delete(itemId);
+      }
+    }
+    for (const hidden of this.hiddenByUser.values()) {
+      for (const itemId of removedItemIds) {
+        hidden.delete(itemId);
+      }
+    }
+
+    return { ok: true as const };
   }
 
   reviewSubmission(submissionId: string, decision: 'approved' | 'rejected') {
@@ -578,6 +718,18 @@ export class DemoStore {
     };
   }
 
+  updateComment(username: string, commentId: string, body: string) {
+    const comment = this.comments.find((entry) => entry.id === commentId && !entry.deletedAt);
+    if (!comment) throw new Error('Comment not found.');
+    if (comment.authorUsername !== username) throw new Error('You can only edit your own comments.');
+    if (Date.now() - new Date(comment.createdAt).getTime() > COMMENT_EDIT_WINDOW_MS) {
+      throw new Error('The comment edit window has expired.');
+    }
+    comment.body = body;
+    comment.editedAt = new Date().toISOString();
+    return comment;
+  }
+
   deleteComment(commentId: string, moderationNote?: string) {
     const comment = this.comments.find((entry) => entry.id === commentId);
     if (!comment) throw new Error('Comment not found.');
@@ -635,6 +787,16 @@ export class DemoStore {
         resolvedAt: null
       });
     }
+    return user;
+  }
+
+  setUserRole(username: string, role: UserRole) {
+    const user = this.requireUser(username);
+    if (user.role === role) return user;
+    if (user.role === 'admin' && role !== 'admin' && this.users.filter((entry) => entry.role === 'admin').length <= 1) {
+      throw new Error('At least one admin account must remain.');
+    }
+    user.role = role;
     return user;
   }
 
