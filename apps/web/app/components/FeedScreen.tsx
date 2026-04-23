@@ -16,6 +16,7 @@ import { getCommentsCountByItem } from '../lib/demo';
 import { useSessionViewer } from '../lib/session';
 import { AppShell } from './AppShell';
 import { ArticleCard } from './ArticleCard';
+import { ContentImage } from './ContentImage';
 import { FeedToolbar } from './FeedToolbar';
 
 export function FeedScreen({
@@ -114,11 +115,13 @@ export function FeedScreen({
                           }}
                         >
                           {resolvedImageMode === 'on' ? (
-                            <Box
-                              component="img"
+                            <ContentImage
                               src={item.coverImageUrl}
                               alt={translation?.title || item.originalTitle}
-                              sx={{ width: '100%', height: 120, objectFit: 'cover' }}
+                              sourceIconUrl={item.sourceIconUrl}
+                              sourceName={item.sourceName}
+                              height={120}
+                              compact
                             />
                           ) : null}
                           <CardContent sx={{ '&:last-child': { pb: 2 } }}>

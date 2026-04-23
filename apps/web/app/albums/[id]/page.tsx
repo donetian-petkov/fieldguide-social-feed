@@ -6,6 +6,7 @@ import { Alert, Box, Button, Stack, TextField, Typography } from '@mui/material'
 
 import { AppShell } from '../../components/AppShell';
 import { ArticleCard } from '../../components/ArticleCard';
+import { ContentImage } from '../../components/ContentImage';
 import { SectionCard } from '../../components/SectionCard';
 import { demoViewer, getAlbumModel, getAlbumCover, getCommentsCountByItem } from '../../lib/demo';
 import { useAlbumQuery, useDeleteAlbumMutation, useUpdateAlbumMutation } from '../../lib/api';
@@ -105,7 +106,14 @@ export default function AlbumPage({ params }: { params: { id: string } }) {
 
         {cover ? (
           <SectionCard title="Album cover" eyebrow="Curated collection">
-            <img src={cover.coverImageUrl} alt={cover.originalTitle} style={{ width: '100%', maxHeight: 280, objectFit: 'cover', borderRadius: 16 }} />
+            <ContentImage
+              src={cover.coverImageUrl}
+              alt={cover.originalTitle}
+              sourceIconUrl={cover.sourceIconUrl}
+              sourceName={cover.sourceName}
+              height={280}
+              sx={{ borderRadius: 4 }}
+            />
           </SectionCard>
         ) : null}
 

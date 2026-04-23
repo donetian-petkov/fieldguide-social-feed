@@ -10,6 +10,7 @@ import type { CommentDto, ContentItem } from '@edu-feed/shared';
 import { AppShell } from '../../components/AppShell';
 import { AskAiCard } from '../../components/AskAiCard';
 import { ArticleCard } from '../../components/ArticleCard';
+import { ContentImage } from '../../components/ContentImage';
 import { SectionCard } from '../../components/SectionCard';
 import { getItemModel, demoViewer } from '../../lib/demo';
 import {
@@ -66,11 +67,13 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
   return (
     <AppShell title={translation.title || item.originalTitle} subtitle={item.sourceName} viewer={viewer}>
       <Stack spacing={3}>
-        <Box
-          component="img"
+        <ContentImage
           src={item.coverImageUrl}
           alt={translation.title || item.originalTitle}
-          sx={{ width: '100%', height: { xs: 240, md: 380 }, objectFit: 'cover', borderRadius: 4 }}
+          sourceIconUrl={item.sourceIconUrl}
+          sourceName={item.sourceName}
+          height={{ xs: 240, md: 380 }}
+          sx={{ borderRadius: 4 }}
         />
 
         <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">

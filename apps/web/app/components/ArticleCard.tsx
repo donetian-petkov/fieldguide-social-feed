@@ -14,7 +14,6 @@ import {
   Button,
   Card,
   CardContent,
-  CardMedia,
   Chip,
   Collapse,
   Divider,
@@ -30,6 +29,7 @@ import { resolveTranslation } from '@edu-feed/shared';
 import { useHideItemMutation, useSaveItemMutation, useShareItemMutation } from '../lib/api';
 import { useSessionViewer } from '../lib/session';
 import { AskAiCard } from './AskAiCard';
+import { ContentImage } from './ContentImage';
 
 export function ArticleCard({
   item,
@@ -87,11 +87,12 @@ export function ArticleCard({
         onKeyDown={handleCardActivate}
       >
         {showImage ? (
-          <CardMedia
-            component="img"
-            height="240"
-            image={item.coverImageUrl}
+          <ContentImage
+            src={item.coverImageUrl}
             alt={translation?.title || item.originalTitle}
+            sourceIconUrl={item.sourceIconUrl}
+            sourceName={item.sourceName}
+            height={240}
           />
         ) : null}
         <CardContent>

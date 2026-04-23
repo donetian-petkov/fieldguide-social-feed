@@ -214,10 +214,10 @@ function stripHtml(value: string) {
     .trim();
 }
 
-function normalizeUrl(value?: string | null) {
+function normalizeUrl(value?: string | null, baseUrl?: string | URL | null) {
   if (!value) return null;
   try {
-    const url = new URL(value.trim());
+    const url = baseUrl ? new URL(value.trim(), baseUrl) : new URL(value.trim());
     url.hash = '';
     return url.toString();
   } catch {
@@ -258,27 +258,40 @@ function parseSourceSubjects(source: { subjectsJson: string }): SubjectTag[] {
   }
 }
 
-function extractMediaUrl(value: unknown): string | null {
+function extractMediaUrl(value: unknown, baseUrl?: string | URL | null): string | null {
   if (!value) return null;
-  if (typeof value === 'string') return normalizeUrl(value);
+  if (typeof value === 'string') return normalizeUrl(value, baseUrl);
   if (Array.isArray(value)) {
     for (const entry of value) {
-      const nested = extractMediaUrl(entry);
+      const nested = extractMediaUrl(entry, baseUrl);
       if (nested) return nested;
     }
     return null;
   }
   if (typeof value === 'object') {
     const record = value as Record<string, unknown>;
-    if (typeof record.url === 'string') return normalizeUrl(record.url);
-    if (typeof record.href === 'string') return normalizeUrl(record.href);
+    if (typeof record.url === 'string') return normalizeUrl(record.url, baseUrl);
+    if (typeof record.href === 'string') return normalizeUrl(record.href, baseUrl);
     if (record.$ && typeof record.$ === 'object') {
       const nested = record.$ as Record<string, unknown>;
-      if (typeof nested.url === 'string') return normalizeUrl(nested.url);
-      if (typeof nested.href === 'string') return normalizeUrl(nested.href);
+      if (typeof nested.url === 'string') return normalizeUrl(nested.url, baseUrl);
+      if (typeof nested.href === 'string') return normalizeUrl(nested.href, baseUrl);
     }
   }
   return null;
+}
+
+function extractEntryImageUrl(entry: ParsedFeedItem, baseUrl?: string | URL | null) {
+  const mediaGroup = entry['media:group'] as Record<string, unknown> | undefined;
+  return (
+    extractMediaUrl(entry.enclosure, baseUrl) ||
+    extractMediaUrl(entry['media:thumbnail'], baseUrl) ||
+    extractMediaUrl(entry['media:content'], baseUrl) ||
+    extractMediaUrl(mediaGroup?.['media:thumbnail'], baseUrl) ||
+    extractMediaUrl(mediaGroup?.['media:content'], baseUrl) ||
+    extractMediaUrl(entry.image, baseUrl) ||
+    null
+  );
 }
 
 function extractYoutubeVideoId(value?: string | null) {
@@ -316,11 +329,12 @@ function extractHtmlAttribute(fragment: string, attribute: string) {
 
 function extractMetaContent(html: string, keys: string[]) {
   for (const key of keys) {
-    const pattern = new RegExp(
-      `<meta[^>]+(?:name|property)=["']${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]+content=["']([^"']+)["'][^>]*>`,
-      'i'
-    );
-    const match = html.match(pattern);
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const patterns = [
+      new RegExp(`<meta[^>]+(?:name|property)=["']${escapedKey}["'][^>]+content=["']([^"']+)["'][^>]*>`, 'i'),
+      new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:name|property)=["']${escapedKey}["'][^>]*>`, 'i')
+    ];
+    const match = patterns.map((pattern) => html.match(pattern)).find(Boolean);
     if (match?.[1]) {
       return decodeHtmlEntities(stripHtml(match[1])).trim();
     }
@@ -330,7 +344,7 @@ function extractMetaContent(html: string, keys: string[]) {
 
 function extractCanonicalUrl(html: string, fallbackUrl: string) {
   const match = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["'][^>]*>/i);
-  return normalizeUrl(match?.[1] || fallbackUrl);
+  return normalizeUrl(match?.[1] || fallbackUrl, fallbackUrl);
 }
 
 function extractPublishedDateFromHtml(html: string) {
@@ -407,11 +421,51 @@ async function enrichAdapterCandidate(entry: ParsedFeedItem) {
       contentSnippet: summary,
       summary,
       content: extractPreviewParagraph(html) || summary,
-      enclosure: imageUrl ? { url: imageUrl } : entry.enclosure
+      enclosure: imageUrl ? { url: normalizeUrl(imageUrl, canonicalUrl) || imageUrl } : entry.enclosure
     } satisfies ParsedFeedItem;
   } catch {
     return entry;
   }
+}
+
+async function enrichLinkedFeedCandidate(entry: ParsedFeedItem) {
+  if (!entry.link || extractEntryImageUrl(entry, entry.link)) return entry;
+  try {
+    const response = await fetch(entry.link, {
+      headers: {
+        'user-agent': 'FieldguideBot/0.1 (+https://fieldguide.local)'
+      }
+    });
+    if (!response.ok) return entry;
+    const html = await response.text();
+    const canonicalUrl = extractCanonicalUrl(html, entry.link) || entry.link;
+    const summary =
+      entry.contentSnippet ||
+      entry.summary ||
+      extractMetaContent(html, ['og:description', 'twitter:description', 'description']) ||
+      extractPreviewParagraph(html) ||
+      entry.title ||
+      '';
+    const imageUrl = extractMetaContent(html, ['og:image', 'twitter:image']);
+    return {
+      ...entry,
+      id: canonicalUrl,
+      guid: entry.guid || canonicalUrl,
+      link: canonicalUrl,
+      isoDate: entry.isoDate || extractPublishedDateFromHtml(html) || undefined,
+      contentSnippet: entry.contentSnippet || summary,
+      summary: entry.summary || summary,
+      content: entry.content || extractPreviewParagraph(html) || summary,
+      enclosure: imageUrl ? { url: normalizeUrl(imageUrl, canonicalUrl) || imageUrl } : entry.enclosure
+    } satisfies ParsedFeedItem;
+  } catch {
+    return entry;
+  }
+}
+
+async function enrichLinkedFeedCandidates(items: ParsedFeedItem[]) {
+  const leadingItems = await Promise.all(items.slice(0, 20).map((entry) => enrichLinkedFeedCandidate(entry)));
+  return [...leadingItems, ...items.slice(20)];
 }
 
 async function fetchCustomAdapterFeed(feed: SourceFeedRecord, html: string) {
@@ -860,7 +914,7 @@ async function fetchFeed(feed: SourceFeedRecord) {
   const items =
     feed.kind === 'custom'
       ? await fetchCustomAdapterFeed(feed, body)
-      : ((await parser.parseString(body)).items as ParsedFeedItem[]);
+      : await enrichLinkedFeedCandidates((await parser.parseString(body)).items as ParsedFeedItem[]);
 
   await prisma.sourceFeed.update({
     where: {
@@ -892,10 +946,9 @@ function deriveFeedItem(sourceFeed: SourceFeedRecord, entry: ParsedFeedItem): In
   const audience = detectAudience(sourceFeed.source.defaultAudience, flags, sourceFeed.source.sourceType);
   const youtubeVideoId = extractYoutubeVideoId(canonicalUrl || entry.id || entry.guid);
   const slugBase = slugify(title) || `item-${dedupeKey.slice(0, 8)}`;
+  const imageBaseUrl = canonicalUrl || entry.link || sourceFeed.feedUrl || sourceFeed.source.siteUrl;
   const coverImageUrl =
-    extractMediaUrl(entry.enclosure) ||
-    extractMediaUrl(entry['media:thumbnail']) ||
-    extractMediaUrl(entry['media:content']) ||
+    extractEntryImageUrl(entry, imageBaseUrl) ||
     (youtubeVideoId ? `https://i.ytimg.com/vi/${youtubeVideoId}/hqdefault.jpg` : sourceFeed.source.iconUrl);
   const translations = buildTranslationRecords(sourceFeed.source.language, title, summary, `${slugBase}-${dedupeKey.slice(0, 8)}`);
   const tags = buildTagRecords(subject, audience, flags, sourceFeed.kind);
