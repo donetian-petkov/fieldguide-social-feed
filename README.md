@@ -48,6 +48,8 @@ Open:
 - Web: [http://localhost:3000](http://localhost:3000)
 - API health: [http://localhost:4000/health](http://localhost:4000/health)
 
+Use `localhost` consistently for the web and API while testing auth. Browser cookies are host-scoped, so mixing `127.0.0.1:3000` with `localhost:4000` can make the app appear signed out even after a successful login.
+
 Seeded demo logins:
 
 ```text

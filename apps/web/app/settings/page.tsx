@@ -14,10 +14,23 @@ import { getSavedAlbumsForViewer, getSettingsModel } from '../lib/demo';
 import { useAlbumsQuery, useCreateAlbumMutation, useDeleteAlbumMutation, useUpdateSettingsMutation } from '../lib/api';
 import { useSessionViewer } from '../lib/session';
 
+function getMutationErrorMessage(error: unknown, fallback: string) {
+  if (error && typeof error === 'object' && 'data' in error) {
+    const data = (error as { data?: unknown }).data;
+    if (data && typeof data === 'object' && 'error' in data && typeof (data as { error?: unknown }).error === 'string') {
+      return (data as { error: string }).error;
+    }
+    if (typeof data === 'string') {
+      return data;
+    }
+  }
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
 export default function SettingsPage() {
   const model = getSettingsModel();
   const { viewer, isAuthenticated } = useSessionViewer(model.viewer);
-  const albumsQuery = useAlbumsQuery();
+  const albumsQuery = useAlbumsQuery(undefined, { skip: !isAuthenticated });
   const [updateSettings] = useUpdateSettingsMutation();
   const [createAlbum, createAlbumState] = useCreateAlbumMutation();
   const [deleteAlbum, deleteAlbumState] = useDeleteAlbumMutation();
@@ -31,13 +44,19 @@ export default function SettingsPage() {
     patch: Partial<UserSettingsDto>,
     successMessage: string
   ) {
+    if (!isAuthenticated) {
+      setMessageSeverity('error');
+      setMessage('Sign in to save settings.');
+      return;
+    }
+
     try {
       await updateSettings(patch).unwrap();
       setMessageSeverity('success');
       setMessage(successMessage);
     } catch (error) {
       setMessageSeverity('error');
-      setMessage(error instanceof Error ? error.message : 'Could not save the settings.');
+      setMessage(getMutationErrorMessage(error, 'Could not save the settings.'));
     }
   }
 
@@ -53,12 +72,22 @@ export default function SettingsPage() {
           }
         }}
       >
+        {!isAuthenticated ? (
+          <Alert severity="info" sx={{ gridColumn: '1 / -1' }}>
+            Sign in to save settings, manage albums, and persist newsletter or Ask-AI preferences. Use the seeded account
+            {' '}
+            <Box component="span" sx={{ fontWeight: 700 }}>admin / fieldguide123</Box>
+            {' '}
+            for admin access.
+          </Alert>
+        ) : null}
         <Box>
           <SectionCard title="Appearance" eyebrow="Inspired by the reference project">
             <Stack spacing={2}>
               <FormControl fullWidth>
                 <InputLabel>Interface language</InputLabel>
                 <Select
+                  disabled={!isAuthenticated}
                   label="Interface language"
                   value={viewer.language}
                   onChange={(event) => {
@@ -72,6 +101,7 @@ export default function SettingsPage() {
               <FormControl fullWidth>
                 <InputLabel>Vibe</InputLabel>
                 <Select
+                  disabled={!isAuthenticated}
                   label="Vibe"
                   value={viewer.vibePreset}
                   onChange={(event) => {
@@ -88,6 +118,7 @@ export default function SettingsPage() {
               <FormControl fullWidth>
                 <InputLabel>Language mode</InputLabel>
                 <Select
+                  disabled={!isAuthenticated}
                   label="Language mode"
                   value={viewer.contentLanguageMode}
                   onChange={(event) => {
@@ -101,6 +132,7 @@ export default function SettingsPage() {
               <FormControl fullWidth>
                 <InputLabel>Theme mode</InputLabel>
                 <Select
+                  disabled={!isAuthenticated}
                   label="Theme mode"
                   value={viewer.themeMode}
                   onChange={(event) => {
@@ -115,6 +147,7 @@ export default function SettingsPage() {
               <FormControl fullWidth>
                 <InputLabel>Font</InputLabel>
                 <Select
+                  disabled={!isAuthenticated}
                   label="Font"
                   value={viewer.fontFamily}
                   onChange={(event) => {
@@ -131,6 +164,7 @@ export default function SettingsPage() {
               <FormControl fullWidth>
                 <InputLabel>Font size</InputLabel>
                 <Select
+                  disabled={!isAuthenticated}
                   label="Font size"
                   value={viewer.fontScale}
                   onChange={(event) => {
@@ -145,6 +179,7 @@ export default function SettingsPage() {
               <Stack direction="row" alignItems="center" justifyContent="space-between">
                 <Typography>Images on/off</Typography>
                 <Switch
+                  disabled={!isAuthenticated}
                   checked={viewer.imageMode === 'on'}
                   onChange={(_event, checked) => {
                     void saveSettings({ imageMode: checked ? 'on' : 'off' }, 'Image preference saved.');
@@ -154,6 +189,7 @@ export default function SettingsPage() {
               <Stack direction="row" alignItems="center" justifyContent="space-between">
                 <Typography>Newsletter enabled</Typography>
                 <Switch
+                  disabled={!isAuthenticated}
                   checked={viewer.newsletterEnabled}
                   onChange={(_event, checked) => {
                     void saveSettings({ newsletterEnabled: checked }, 'Newsletter preference saved.');
@@ -163,6 +199,7 @@ export default function SettingsPage() {
               <FormControl fullWidth>
                 <InputLabel>Newsletter cadence</InputLabel>
                 <Select
+                  disabled={!isAuthenticated}
                   label="Newsletter cadence"
                   value={viewer.newsletterCadence}
                   onChange={(event) => {
@@ -214,7 +251,7 @@ export default function SettingsPage() {
                           setMessage('Album deleted.');
                         } catch (error) {
                           setMessageSeverity('error');
-                          setMessage(error instanceof Error ? error.message : 'Could not delete the album.');
+                          setMessage(getMutationErrorMessage(error, 'Could not delete the album.'));
                         }
                       }}
                     >
@@ -254,7 +291,7 @@ export default function SettingsPage() {
                     setMessage('Album created.');
                   } catch (error) {
                     setMessageSeverity('error');
-                    setMessage(error instanceof Error ? error.message : 'Could not create the album.');
+                    setMessage(getMutationErrorMessage(error, 'Could not create the album.'));
                   }
                 }}
               >
@@ -275,6 +312,7 @@ export default function SettingsPage() {
               <Stack direction="row" alignItems="center" justifyContent="space-between">
                 <Typography>Ask-AI enabled</Typography>
                 <Switch
+                  disabled={!isAuthenticated}
                   checked={viewer.askAiEnabled}
                   onChange={(_event, checked) => {
                     void saveSettings({ askAiEnabled: checked }, 'Ask-AI preference saved.');
