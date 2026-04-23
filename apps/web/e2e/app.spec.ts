@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 async function loginAs(page: Page, username: 'alex' | 'admin' | 'mila' = 'alex') {
   await page.goto('/auth');
@@ -61,6 +61,86 @@ test('settings support album creation and protected mode switching', async ({ pa
   await page.getByRole('button', { name: 'Verify and switch' }).click();
 
   await expect(page.getByText('Protected mode switched to adult.')).toBeVisible();
+});
+
+test('settings persist newsletter preferences and Ask-AI disablement', async ({ page }) => {
+  test.setTimeout(60_000);
+  const appearanceCard = sectionCard(page, 'Appearance');
+  const aiPreferencesCard = sectionCard(page, 'AI preferences');
+  const newsletterSwitch = appearanceCard.getByText('Newsletter enabled').locator('..').getByRole('switch');
+  const askAiSwitch = aiPreferencesCard.getByText('Ask-AI enabled').locator('..').getByRole('switch');
+  const newsletterCadenceField = appearanceCard.getByText('Newsletter cadence').locator('..').getByRole('combobox');
+
+  async function setSwitch(input: Locator, checked: boolean, successMessage: string) {
+    if ((await input.isChecked()) !== checked) {
+      await input.evaluate((element, nextChecked) => {
+        const checkbox = element as HTMLInputElement;
+        if (checkbox.checked !== nextChecked) {
+          checkbox.click();
+        }
+      }, checked);
+      if (checked) {
+        await expect(input).toBeChecked();
+      } else {
+        await expect(input).not.toBeChecked();
+      }
+      await expect(page.getByText(successMessage)).toBeVisible();
+    }
+  }
+
+  async function setNewsletterCadence(label: 'Daily' | 'Weekly') {
+    if (!((await newsletterCadenceField.textContent()) || '').includes(label)) {
+      await newsletterCadenceField.click();
+      await page.getByRole('option', { name: label }).click();
+      await expect(page.getByText('Newsletter cadence saved.')).toBeVisible();
+    }
+  }
+
+  try {
+    await loginAs(page, 'alex');
+    await page.goto('/settings');
+    await expect(newsletterCadenceField).toBeVisible();
+
+    await setSwitch(newsletterSwitch, true, 'Newsletter preference saved.');
+    await setNewsletterCadence('Weekly');
+    await setSwitch(askAiSwitch, true, 'Ask-AI preference saved.');
+
+    await setSwitch(newsletterSwitch, false, 'Newsletter preference saved.');
+    await setNewsletterCadence('Daily');
+    await setSwitch(askAiSwitch, false, 'Ask-AI preference saved.');
+
+    await page.reload();
+    await expect(newsletterSwitch).not.toBeChecked();
+    await expect(newsletterCadenceField).toContainText('Daily');
+    await expect(askAiSwitch).not.toBeChecked();
+
+    await page.goto('/item/the-bell-rhythms-of-kukeri-season');
+    const askAiSection = page.getByRole('heading', { name: 'Ask AI' }).locator('..').locator('..');
+    await expect(askAiSection.getByRole('button', { name: 'Ask' })).toBeDisabled();
+    await expect(askAiSection.getByText('Enable Ask-AI in settings to ask questions.')).toBeVisible();
+  } finally {
+    try {
+      const cleanup = await page.evaluate(async () => {
+        const response = await fetch('http://localhost:4000/v1/me/settings', {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: {
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            newsletterEnabled: true,
+            newsletterCadence: 'weekly',
+            askAiEnabled: true
+          })
+        });
+
+        return response.status;
+      });
+      expect(cleanup).toBe(200);
+    } catch {
+      // Best-effort cleanup so repeated runs preserve Alex's seeded settings.
+    }
+  }
 });
 
 test('password recovery can issue a reset token and accept a new password', async ({ page }) => {
@@ -338,6 +418,85 @@ test('admin users console supports suspend and restore', async ({ page }) => {
         // Best-effort cleanup so repeated runs leave Mila in the default restored state.
       }
     }
+  }
+});
+
+test('admin pinning updates the public pinned rail for the matching feed', async ({ browser }) => {
+  test.setTimeout(60_000);
+  const itemId = 'item-photo';
+  const title = 'Why rain and reflection still matter in street photography';
+  const adminContext = await browser.newContext();
+  const readerContext = await browser.newContext();
+  const adminPage = await adminContext.newPage();
+  const readerPage = await readerContext.newPage();
+  const itemCard = sectionCard(adminPage, title);
+  let pinned = false;
+
+  async function clearPinnedState() {
+    const result = await adminPage.evaluate(async (currentItemId) => {
+      const response = await fetch(`http://localhost:4000/v1/admin/items/${currentItemId}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ pinned: false })
+      });
+
+      return {
+        status: response.status,
+        body: await response.text()
+      };
+    }, itemId);
+
+    expect(result.status).toBe(200);
+  }
+
+  try {
+    await loginAs(adminPage, 'admin');
+    await loginAs(readerPage, 'alex');
+
+    await clearPinnedState();
+
+    await readerPage.goto('/feed/photography');
+    await expect(readerPage.getByText('Pinned stories')).toHaveCount(0);
+    await expect(readerPage.getByText(title)).toHaveCount(1);
+
+    await adminPage.goto('/admin/moderation');
+    await expect(itemCard).toBeVisible();
+    const pinResponsePromise = adminPage.waitForResponse(
+      (response) =>
+        response.url().includes('/v1/admin/items/item-photo/pin') &&
+        response.request().method() === 'POST' &&
+        response.status() === 200
+    );
+    await itemCard.getByRole('button', { name: 'Pin Slot 1' }).click();
+    const pinResponse = await pinResponsePromise;
+    const pinResult = await pinResponse.json();
+    expect(pinResult.item.id).toBe(itemId);
+    expect(pinResult.item.pinned).toBe(true);
+    await expect(adminPage.getByText('Item pinned to slot 1.')).toBeVisible();
+    pinned = true;
+
+    await readerPage.reload();
+    await expect(readerPage.getByText('Pinned stories')).toBeVisible();
+    await expect(readerPage.getByText(title)).toHaveCount(2);
+
+    await readerPage.reload();
+    await expect(readerPage.getByText('Pinned stories')).toBeVisible();
+    await expect(readerPage.getByText(title)).toHaveCount(2);
+  } finally {
+    if (pinned) {
+      try {
+        await clearPinnedState();
+        await readerPage.goto('/feed/photography');
+        await expect(readerPage.getByText('Pinned stories')).toHaveCount(0);
+        await expect(readerPage.getByText(title)).toHaveCount(1);
+      } catch {
+        // Best-effort cleanup so repeated runs do not leave photography pinned state behind.
+      }
+    }
+    await Promise.allSettled([adminContext.close(), readerContext.close()]);
   }
 });
 

@@ -79,6 +79,12 @@ type AlbumDetail = {
 
 const COMMENT_EDIT_WINDOW_MS = 15 * 60 * 1000;
 
+function subjectToFeed(subject: ContentItem['subject']): SubjectFeed {
+  if (subject === 'country_knowledge') return 'country-knowledge';
+  if (subject === 'video') return 'videos';
+  return subject;
+}
+
 export class DemoStore {
   private readonly sessionTtlMs: number;
 
@@ -745,6 +751,9 @@ export class DemoStore {
     const item = this.items.find((entry) => entry.id === itemId);
     if (!item) throw new Error('Item not found.');
     Object.assign(item, patch);
+    if (patch.pinned === false) {
+      this.pinnedSlots = this.pinnedSlots.filter((entry) => entry.itemId !== itemId);
+    }
     return item;
   }
 
@@ -755,6 +764,7 @@ export class DemoStore {
     if (removed) {
       this.removedItemIds.add(itemId);
       item.pinned = false;
+      this.pinnedSlots = this.pinnedSlots.filter((entry) => entry.itemId !== itemId);
     } else {
       this.removedItemIds.delete(itemId);
     }
@@ -764,9 +774,18 @@ export class DemoStore {
   pinItem(itemId: string, slot: number) {
     const item = this.items.find((entry) => entry.id === itemId);
     if (!item) throw new Error('Item not found.');
+    const feed = subjectToFeed(item.subject);
     item.pinned = true;
-    const existingSlot = this.pinnedSlots.find((entry) => entry.slot === slot);
-    if (existingSlot) existingSlot.itemId = itemId;
+    const existingSlot = this.pinnedSlots.find((entry) => entry.feed === feed && entry.slot === slot);
+    if (existingSlot) {
+      existingSlot.itemId = itemId;
+    } else {
+      this.pinnedSlots.push({
+        feed,
+        slot,
+        itemId
+      });
+    }
     return item;
   }
 

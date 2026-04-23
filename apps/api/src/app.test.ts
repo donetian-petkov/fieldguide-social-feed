@@ -260,6 +260,82 @@ test('admin routes reject non-admin users and schedule new sources for ingestion
   }
 });
 
+test('admin pinning stays scoped to the item feed and can be cleared again', async () => {
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    const adminCookie = await login(app, 'admin', 'fieldguide123');
+
+    const beforeResponse = await app.inject({
+      method: 'GET',
+      url: '/v1/feed?feed=photography'
+    });
+    assert.equal(beforeResponse.statusCode, 200);
+    assert.equal(beforeResponse.json().pinnedItems.some((item: { id: string }) => item.id === 'item-photo'), false);
+
+    const pinResponse = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/items/item-photo/pin',
+      headers: {
+        cookie: adminCookie
+      },
+      payload: {
+        slot: 0
+      }
+    });
+    assert.equal(pinResponse.statusCode, 200);
+    assert.equal(pinResponse.json().item.id, 'item-photo');
+    assert.equal(pinResponse.json().item.pinned, true);
+
+    const photographyFeedResponse = await app.inject({
+      method: 'GET',
+      url: '/v1/feed?feed=photography'
+    });
+    assert.equal(photographyFeedResponse.statusCode, 200);
+    assert.equal(
+      photographyFeedResponse
+        .json()
+        .pinnedItems.some((item: { id: string }) => item.id === 'item-photo'),
+      true
+    );
+
+    const historyFeedResponse = await app.inject({
+      method: 'GET',
+      url: '/v1/feed?feed=history'
+    });
+    assert.equal(historyFeedResponse.statusCode, 200);
+    assert.equal(
+      historyFeedResponse
+        .json()
+        .pinnedItems.some((item: { id: string }) => item.id === 'item-sutton-hoo'),
+      true
+    );
+
+    const clearResponse = await app.inject({
+      method: 'PATCH',
+      url: '/v1/admin/items/item-photo',
+      headers: {
+        cookie: adminCookie
+      },
+      payload: {
+        pinned: false
+      }
+    });
+    assert.equal(clearResponse.statusCode, 200);
+    assert.equal(clearResponse.json().item.pinned, false);
+
+    const afterClearResponse = await app.inject({
+      method: 'GET',
+      url: '/v1/feed?feed=photography'
+    });
+    assert.equal(afterClearResponse.statusCode, 200);
+    assert.equal(afterClearResponse.json().pinnedItems.length, 0);
+  } finally {
+    await app.close();
+  }
+});
+
 test('approved community submissions appear in the community feed and author profile', async () => {
   const { store, queues } = createHarness();
   const app = await buildApp({ config: testConfig, store, queues });

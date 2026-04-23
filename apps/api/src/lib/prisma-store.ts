@@ -1768,6 +1768,14 @@ export class PrismaStore implements AppStore {
           }
         });
       }
+
+      if (patch.pinned === false) {
+        await tx.pinnedSlot.deleteMany({
+          where: {
+            itemId
+          }
+        });
+      }
     });
 
     const updated = await this.findItem(itemId);
@@ -1776,13 +1784,23 @@ export class PrismaStore implements AppStore {
   }
 
   async removeItem(itemId: string, removed: boolean) {
-    await this.prisma.contentItem.update({
-      where: {
-        id: itemId
-      },
-      data: {
-        removedAt: removed ? new Date() : null,
-        pinned: removed ? false : undefined
+    await this.prisma.$transaction(async (tx) => {
+      await tx.contentItem.update({
+        where: {
+          id: itemId
+        },
+        data: {
+          removedAt: removed ? new Date() : null,
+          pinned: removed ? false : undefined
+        }
+      });
+
+      if (removed) {
+        await tx.pinnedSlot.deleteMany({
+          where: {
+            itemId
+          }
+        });
       }
     });
     const updated = await this.findItem(itemId, true);
