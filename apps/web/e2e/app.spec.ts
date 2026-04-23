@@ -25,6 +25,7 @@ test('login opens the history feed and keyboard help dialog', async ({ page }) =
 
   await expect(page.getByRole('banner').getByText('History', { exact: true })).toBeVisible();
   await expect(page.getByText('Pinned stories')).toBeVisible();
+  await expect(page.locator('a[href^="/item/"]').filter({ hasText: 'Open story' }).first()).toHaveAttribute('href', /\/item\//);
 
   await page.keyboard.press('Shift+Slash');
   await expect(page.getByRole('dialog')).toContainText('Keyboard shortcuts');

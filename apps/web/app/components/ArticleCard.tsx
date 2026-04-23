@@ -7,6 +7,7 @@ import BookmarkBorderRoundedIcon from '@mui/icons-material/BookmarkBorderRounded
 import ChatBubbleOutlineRoundedIcon from '@mui/icons-material/ChatBubbleOutlineRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import IosShareRoundedIcon from '@mui/icons-material/IosShareRounded';
+import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import {
   Box,
@@ -111,7 +112,19 @@ export function ArticleCard({
                     {new Date(item.publishedAt).toLocaleDateString()}
                   </Typography>
                 </Stack>
-                <Typography component={Link} href={`/item/${item.slug}`} variant="h5">
+                <Typography
+                  component={Link}
+                  href={detailHref}
+                  variant="h5"
+                  sx={{
+                    color: 'text.primary',
+                    textDecoration: 'none',
+                    '&:hover': {
+                      color: 'primary.main',
+                      textDecoration: 'underline'
+                    }
+                  }}
+                >
                   {translation?.title || item.originalTitle}
                 </Typography>
               </Stack>
@@ -155,6 +168,9 @@ export function ArticleCard({
             <Divider />
 
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+              <Button component={Link} href={detailHref} startIcon={<OpenInNewRoundedIcon />} variant="contained">
+                Open story
+              </Button>
               <Button
                 startIcon={<BookmarkBorderRoundedIcon />}
                 variant="outlined"
