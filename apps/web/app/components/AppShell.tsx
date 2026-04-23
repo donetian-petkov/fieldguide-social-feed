@@ -31,7 +31,7 @@ import {
 
 import type { SubjectFeed, UserSettingsDto } from '@edu-feed/shared';
 
-import { useLogoutMutation } from '../lib/api';
+import { useHealthQuery, useLogoutMutation } from '../lib/api';
 import { FEED_ORDER, normalizeFeedSegment } from '../lib/demo';
 import { useSessionViewer } from '../lib/session';
 
@@ -65,7 +65,9 @@ export function AppShell({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const { viewer: resolvedViewer, isAuthenticated } = useSessionViewer(viewer);
+  const healthQuery = useHealthQuery();
   const [logout, logoutState] = useLogoutMutation();
+  const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -127,6 +129,9 @@ export function AppShell({
         return;
       }
       if (event.key === 'a' || event.key === 'A') {
+        if (!aiAvailable) {
+          return;
+        }
         event.preventDefault();
         const visibleInput = document.querySelector('[data-ask-ai-input]') as HTMLElement | null;
         if (visibleInput) {
@@ -143,7 +148,7 @@ export function AppShell({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [pathname, router]);
+  }, [aiAvailable, pathname, router]);
 
   const navItems = [
     { href: '/feed/history', label: 'Main feed', icon: <AutoAwesomeRoundedIcon /> },
@@ -246,7 +251,7 @@ export function AppShell({
             <Typography variant="body2">`[` and `]` switch subject feeds</Typography>
             <Typography variant="body2">`S` open saved feed</Typography>
             <Typography variant="body2">`C` open community feed</Typography>
-            <Typography variant="body2">`A` focus Ask AI on the current item</Typography>
+            {aiAvailable ? <Typography variant="body2">`A` focus Ask AI on the current item</Typography> : null}
             <Typography variant="body2">`Esc` close overlays</Typography>
           </Stack>
         </DialogContent>

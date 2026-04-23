@@ -24,7 +24,7 @@ import type {
 } from '@edu-feed/shared';
 import { DEMO_AI_CONFIG, filterItemsForFeed, resolveTranslation } from '@edu-feed/shared';
 
-import { estimateCostUsd, estimateTokens, fallbackModelForProvider, runCompletion } from './ai-runtime.js';
+import { estimateCostUsd, estimateTokens, fallbackModelForProvider, hasProviderKey, runCompletion } from './ai-runtime.js';
 import type { AdminSnapshot, AppStore, FeedResponse, RegisterInput } from './store.js';
 
 type UserWithSettings = Prisma.UserGetPayload<{
@@ -1274,6 +1274,16 @@ export class PrismaStore implements AppStore {
         : `For "${translation?.title}", start with the source context, the central claim, and which museum, archive, or primary materials could deepen the story. Your question was: ${question}`;
     const citations = [item.externalUrl || `${this.appUrl}/item/${item.slug}`];
     const aiConfig = await this.getEffectiveAiConfig();
+    if (!hasProviderKey(aiConfig.provider, this.aiKeys)) {
+      await this.prisma.systemErrorEvent.create({
+        data: {
+          scope: 'ai',
+          level: 'warn',
+          message: `Ask-AI request rejected: missing API key for provider ${aiConfig.provider}.`
+        }
+      });
+      throw new Error('AI is not available because the configured provider has no API key.');
+    }
     const contentMode = viewer?.settings?.contentMode || 'standard';
 
     const systemPrompt =
@@ -1517,6 +1527,17 @@ export class PrismaStore implements AppStore {
 
   async requestGeneratedStory(username: string, input: { subject: SubjectTag; prompt: string }) {
     const user = await this.requireUser(username);
+    const aiConfig = await this.getEffectiveAiConfig();
+    if (!hasProviderKey(aiConfig.provider, this.aiKeys)) {
+      await this.prisma.systemErrorEvent.create({
+        data: {
+          scope: 'ai',
+          level: 'warn',
+          message: `Generated story request rejected: missing API key for provider ${aiConfig.provider}.`
+        }
+      });
+      throw new Error('AI is not available because the configured provider has no API key.');
+    }
     const draft = await this.prisma.generatedStoryDraft.create({
       data: {
         subject: input.subject,

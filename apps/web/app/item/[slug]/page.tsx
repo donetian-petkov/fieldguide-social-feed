@@ -17,6 +17,7 @@ import {
   useAddAlbumItemMutation,
   useAlbumsQuery,
   useCreateCommentMutation,
+  useHealthQuery,
   useItemQuery,
   useSaveItemMutation,
   useUpdateCommentMutation
@@ -29,6 +30,7 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
   const fallback = getItemModel(params.slug);
   const { viewer, isAuthenticated } = useSessionViewer(demoViewer);
   const itemQuery = useItemQuery(params.slug);
+  const healthQuery = useHealthQuery();
   const albumsQuery = useAlbumsQuery(undefined, {
     skip: !isAuthenticated
   });
@@ -49,6 +51,7 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
   const albums = albumsQuery.data?.albums || [];
   const translatedArtifact = item?.translations.find((entry) => entry.aiAudit) || null;
   const hasAiAudit = viewer.role === 'admin' && Boolean(item?.ai.summaryAudit || item?.ai.classificationAudit || translatedArtifact?.aiAudit);
+  const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
 
   useEffect(() => {
     if (!selectedAlbumId && albums[0]?.id) {
@@ -94,7 +97,7 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
         >
           <Box>
             <Stack spacing={3}>
-              <SectionCard title="Summary" eyebrow="AI translated and compressed">
+              <SectionCard title="Summary" eyebrow={aiAvailable ? 'AI translated and compressed' : 'Source summary'}>
                 <Typography variant="body1">{translation.summary}</Typography>
                 {item.bodyMarkdown ? (
                   <Typography variant="body2" color="text.secondary">
@@ -206,7 +209,7 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
 
           <Box>
             <Stack spacing={3}>
-              <AskAiCard item={item} language={viewer.language} />
+              {aiAvailable ? <AskAiCard item={item} language={viewer.language} /> : null}
               {hasAiAudit ? (
                 <SectionCard title="AI audit" eyebrow="Stored artifact metadata">
                   <Stack spacing={1.5}>

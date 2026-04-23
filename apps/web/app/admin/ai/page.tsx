@@ -22,6 +22,7 @@ import { SectionCard } from '../../components/SectionCard';
 import { getAdminModel } from '../../lib/demo';
 import {
   useAdminDashboardQuery,
+  useHealthQuery,
   useRequestGeneratedStoryMutation,
   useReviewGeneratedStoryMutation,
   useUpdateAiConfigMutation
@@ -51,6 +52,7 @@ export default function AdminAiPage() {
   const fallback = getAdminModel();
   const { viewer } = useSessionViewer(fallback.viewer);
   const adminQuery = useAdminDashboardQuery();
+  const healthQuery = useHealthQuery();
   const [updateAiConfig, updateState] = useUpdateAiConfigMutation();
   const [requestGeneratedStory, requestState] = useRequestGeneratedStoryMutation();
   const [reviewGeneratedStory, reviewState] = useReviewGeneratedStoryMutation();
@@ -59,6 +61,7 @@ export default function AdminAiPage() {
   const [form, setForm] = useState<AiModelConfig>(model.aiConfig);
   const [storySubject, setStorySubject] = useState<SubjectTag>('history');
   const [storyPrompt, setStoryPrompt] = useState('');
+  const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
 
   useEffect(() => {
     setForm(model.aiConfig);
@@ -196,7 +199,8 @@ export default function AdminAiPage() {
             </Stack>
           </SectionCard>
         </Box>
-        <Box sx={{ gridColumn: { xs: 'auto', md: '1 / -1' } }}>
+        {aiAvailable ? (
+          <Box sx={{ gridColumn: { xs: 'auto', md: '1 / -1' } }}>
           <SectionCard title="Manual generated stories" eyebrow="Admin approval only">
             <Stack spacing={2.5}>
               <Alert severity="info">
@@ -304,7 +308,8 @@ export default function AdminAiPage() {
               </Stack>
             </Stack>
           </SectionCard>
-        </Box>
+          </Box>
+        ) : null}
       </Box>
       {adminQuery.isError ? (
         <Alert sx={{ mt: 3 }} severity="warning">

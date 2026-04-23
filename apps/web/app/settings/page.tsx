@@ -11,7 +11,7 @@ import { AppShell } from '../components/AppShell';
 import { ProtectedModeCard } from '../components/ProtectedModeCard';
 import { SectionCard } from '../components/SectionCard';
 import { getSavedAlbumsForViewer, getSettingsModel } from '../lib/demo';
-import { useAlbumsQuery, useCreateAlbumMutation, useDeleteAlbumMutation, useUpdateSettingsMutation } from '../lib/api';
+import { useAlbumsQuery, useCreateAlbumMutation, useDeleteAlbumMutation, useHealthQuery, useUpdateSettingsMutation } from '../lib/api';
 import { useSessionViewer } from '../lib/session';
 
 function getMutationErrorMessage(error: unknown, fallback: string) {
@@ -46,6 +46,7 @@ export default function SettingsPage() {
   const model = getSettingsModel();
   const { viewer, isAuthenticated } = useSessionViewer(model.viewer);
   const albumsQuery = useAlbumsQuery(undefined, { skip: !isAuthenticated });
+  const healthQuery = useHealthQuery();
   const [updateSettings] = useUpdateSettingsMutation();
   const [createAlbum, createAlbumState] = useCreateAlbumMutation();
   const [deleteAlbum, deleteAlbumState] = useDeleteAlbumMutation();
@@ -54,6 +55,7 @@ export default function SettingsPage() {
   const [albumTitle, setAlbumTitle] = useState('');
   const [albumDescription, setAlbumDescription] = useState('');
   const albums = albumsQuery.data?.albums || getSavedAlbumsForViewer();
+  const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
 
   async function saveSettings(
     patch: Partial<UserSettingsDto>,
@@ -321,31 +323,33 @@ export default function SettingsPage() {
           </SectionCard>
         </Box>
 
-        <Box>
-          <SectionCard title="AI preferences" eyebrow="Per-account controls">
-            {!isAuthenticated ? (
-              <SignInRequiredNotice text="Sign in to change Ask-AI availability and other account-level AI preferences." />
-            ) : (
-              <Stack spacing={1.5}>
-                <Stack direction="row" alignItems="center" justifyContent="space-between">
-                  <Typography>Ask-AI enabled</Typography>
-                  <Switch
-                    checked={viewer.askAiEnabled}
-                    onChange={(_event, checked) => {
-                      void saveSettings({ askAiEnabled: checked }, 'Ask-AI preference saved.');
-                    }}
-                  />
+        {aiAvailable ? (
+          <Box>
+            <SectionCard title="AI preferences" eyebrow="Per-account controls">
+              {!isAuthenticated ? (
+                <SignInRequiredNotice text="Sign in to change Ask-AI availability and other account-level AI preferences." />
+              ) : (
+                <Stack spacing={1.5}>
+                  <Stack direction="row" alignItems="center" justifyContent="space-between">
+                    <Typography>Ask-AI enabled</Typography>
+                    <Switch
+                      checked={viewer.askAiEnabled}
+                      onChange={(_event, checked) => {
+                        void saveSettings({ askAiEnabled: checked }, 'Ask-AI preference saved.');
+                      }}
+                    />
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary">
+                    Ask-AI is enabled. Summaries, translation, and article Q&A stay bounded by admin-configured provider and budget rules.
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Password verification is required to leave Standard mode and switch into Kid or Adult mode.
+                  </Typography>
                 </Stack>
-                <Typography variant="body2" color="text.secondary">
-                  Ask-AI is enabled. Summaries, translation, and article Q&A stay bounded by admin-configured provider and budget rules.
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Password verification is required to leave Standard mode and switch into Kid or Adult mode.
-                </Typography>
-              </Stack>
-            )}
-          </SectionCard>
-        </Box>
+              )}
+            </SectionCard>
+          </Box>
+        ) : null}
       </Box>
       {message ? <Alert sx={{ mt: 3 }} severity={messageSeverity}>{message}</Alert> : null}
     </AppShell>

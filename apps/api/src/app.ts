@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import type { UserSettingsDto } from '@edu-feed/shared';
 
 import { getConfig, type AppConfig } from './config.js';
+import { hasProviderKey } from './lib/ai-runtime.js';
 import { DemoStore } from './lib/demo-store.js';
 import { BullMqAppQueues, NoopQueues, type AppQueues } from './lib/queues.js';
 import type { AppStore } from './lib/store.js';
@@ -80,7 +81,8 @@ export async function buildApp(options?: {
   app.get('/health', async () => ({
     ok: true,
     mode: config.DEMO_MODE ? 'demo' : 'database',
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    ...(await resolveAiCapabilities(prisma, config))
   }));
 
   await registerAuthRoutes(app, { store, config });
@@ -94,4 +96,26 @@ export async function buildApp(options?: {
   });
 
   return app;
+}
+
+async function resolveAiCapabilities(prisma: PrismaClient | null, config: AppConfig) {
+  const configured = prisma
+    ? await prisma.aiConfig.findUnique({
+        where: {
+          id: 1
+        },
+        select: {
+          provider: true
+        }
+      })
+    : null;
+  const provider = (configured?.provider || config.DEFAULT_AI_PROVIDER) as AppConfig['DEFAULT_AI_PROVIDER'];
+  return {
+    aiAvailable: hasProviderKey(provider, {
+      OPENAI_API_KEY: config.OPENAI_API_KEY,
+      ANTHROPIC_API_KEY: config.ANTHROPIC_API_KEY,
+      OPENROUTER_API_KEY: config.OPENROUTER_API_KEY
+    }),
+    aiProvider: provider
+  };
 }

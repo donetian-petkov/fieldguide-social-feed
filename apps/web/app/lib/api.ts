@@ -69,6 +69,14 @@ type AskAiResponse = {
   citations: string[];
 };
 
+type HealthResponse = {
+  ok: boolean;
+  mode: string;
+  uptime?: number;
+  aiAvailable: boolean;
+  aiProvider: AiModelConfig['provider'];
+};
+
 export const fieldguideApi = createApi({
   reducerPath: 'fieldguideApi',
   baseQuery: fetchBaseQuery({
@@ -77,7 +85,7 @@ export const fieldguideApi = createApi({
   }),
   tagTypes: ['Me', 'Feed', 'Item', 'Albums', 'Admin', 'Profile'],
   endpoints: (builder) => ({
-    health: builder.query<{ ok: boolean; mode: string }, void>({
+    health: builder.query<HealthResponse, void>({
       query: () => '/health'
     }),
     me: builder.query<MeResponse, void>({

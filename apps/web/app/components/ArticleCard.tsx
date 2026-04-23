@@ -26,7 +26,7 @@ import {
 import type { ContentItem, ContentLanguageMode, InterfaceLanguage } from '@edu-feed/shared';
 import { resolveTranslation } from '@edu-feed/shared';
 
-import { useHideItemMutation, useSaveItemMutation, useShareItemMutation } from '../lib/api';
+import { useHealthQuery, useHideItemMutation, useSaveItemMutation, useShareItemMutation } from '../lib/api';
 import { useSessionViewer } from '../lib/session';
 import { AskAiCard } from './AskAiCard';
 import { ContentImage } from './ContentImage';
@@ -51,6 +51,7 @@ export function ArticleCard({
   const [askOpen, setAskOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const { isAuthenticated, viewer } = useSessionViewer();
+  const healthQuery = useHealthQuery();
   const [saveItem, saveItemState] = useSaveItemMutation();
   const [hideItem] = useHideItemMutation();
   const [shareItem] = useShareItemMutation();
@@ -58,6 +59,7 @@ export function ArticleCard({
   const english = resolveTranslation(item, 'en');
   const bulgarian = resolveTranslation(item, 'bg');
   const detailHref = `/item/${item.slug}`;
+  const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
 
   const navigateToDetail = () => {
     router.push(detailHref);
@@ -209,24 +211,26 @@ export function ArticleCard({
               <Button component={Link} href={`/item/${item.slug}#comments`} startIcon={<ChatBubbleOutlineRoundedIcon />} variant="outlined">
                 Comment ({commentCount})
               </Button>
-              <Button
-                startIcon={<SmartToyOutlinedIcon />}
-                variant="contained"
-                onClick={() => {
-                  if (isAuthenticated && !viewer.askAiEnabled) {
-                    setToast('Ask-AI is disabled in your settings.');
-                    return;
-                  }
-                  setAskOpen((value) => !value);
-                }}
-                data-ask-ai-toggle="true"
-                disabled={isAuthenticated && !viewer.askAiEnabled}
-              >
-                Ask AI
-              </Button>
+              {aiAvailable ? (
+                <Button
+                  startIcon={<SmartToyOutlinedIcon />}
+                  variant="contained"
+                  onClick={() => {
+                    if (isAuthenticated && !viewer.askAiEnabled) {
+                      setToast('Ask-AI is disabled in your settings.');
+                      return;
+                    }
+                    setAskOpen((value) => !value);
+                  }}
+                  data-ask-ai-toggle="true"
+                  disabled={isAuthenticated && !viewer.askAiEnabled}
+                >
+                  Ask AI
+                </Button>
+              ) : null}
             </Stack>
 
-            <Collapse in={askOpen}>
+            <Collapse in={askOpen && aiAvailable}>
               <AskAiCard item={item} language={language} />
             </Collapse>
           </Stack>
