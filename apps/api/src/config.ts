@@ -1,7 +1,16 @@
 import { config as loadEnv } from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
-loadEnv();
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRootEnvPath = path.resolve(moduleDir, '..', '..', '..', '.env');
+const cwdEnvPath = path.resolve(process.cwd(), '.env');
+
+loadEnv({ path: repoRootEnvPath });
+if (cwdEnvPath !== repoRootEnvPath) {
+  loadEnv({ path: cwdEnvPath, override: true });
+}
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),

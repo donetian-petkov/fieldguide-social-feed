@@ -71,6 +71,14 @@ npm run seed
 npm run dev
 ```
 
+Prisma workspace scripts load the repo-root `.env`, so you do not need to duplicate `DATABASE_URL` inside `apps/api/.env`. The Docker MySQL init script creates both `fieldguide` and `fieldguide_shadow`; Prisma uses the shadow database during `migrate dev`.
+
+If you already had a Docker volume from before the shadow database was added, create/grant it once:
+
+```bash
+docker exec -i fieldguide-mysql mysql -uroot -proot -e "CREATE DATABASE IF NOT EXISTS fieldguide_shadow; GRANT ALL PRIVILEGES ON fieldguide_shadow.* TO 'fieldguide'@'%'; FLUSH PRIVILEGES;"
+```
+
 Useful service commands:
 
 ```bash
