@@ -54,6 +54,8 @@ Open:
 
 Use `localhost` consistently for the web and API while testing auth. Browser cookies are host-scoped, so mixing `127.0.0.1:3000` with `localhost:4000` can make the app appear signed out even after a successful login.
 
+`npm run dev` and `npm run start` now supervise the full stack. In database mode they bring up `docker compose` automatically, start API/worker/web together, and run `docker compose down` when you stop with `Ctrl+C`, `SIGTERM`, `SIGHUP`, or by closing the terminal. In `DEMO_MODE=true`, the same runner skips Docker entirely.
+
 The default database seed creates local accounts, the source registry, and AI config only. Set `SEED_USER_PASSWORD` in `.env` before running `npm run seed`; the admin username is `admin`. The source registry is also bootstrapped automatically by the API and worker at startup. It does not insert bundled fixture articles.
 
 To intentionally load bundled UI fixtures into MySQL for development screenshots, run `SEED_DEMO_CONTENT=true npm run seed`. To allow the web app to show bundled fixture data when the API is empty or unavailable, set `NEXT_PUBLIC_DEMO_FALLBACK=true`; this is off by default.
@@ -81,6 +83,7 @@ Useful service commands:
 npm run dev:web
 npm run dev:api
 npm run dev:worker
+npm run start
 ```
 
 ## Verification

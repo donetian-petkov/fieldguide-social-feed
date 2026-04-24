@@ -30,6 +30,7 @@ import { useHealthQuery, useHideItemMutation, useSaveItemMutation, useShareItemM
 import { useSessionViewer } from '../lib/session';
 import { AskAiCard } from './AskAiCard';
 import { ContentImage } from './ContentImage';
+import { SourceMark } from './SourceMark';
 
 export function ArticleCard({
   item,
@@ -102,12 +103,7 @@ export function ArticleCard({
             <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={2}>
               <Stack spacing={0.5}>
                 <Stack direction="row" spacing={1} alignItems="center">
-                  <Box
-                    component="img"
-                    src={item.sourceIconUrl}
-                    alt={item.sourceName}
-                    sx={{ width: 28, height: 28, borderRadius: 2 }}
-                  />
+                  <SourceMark src={item.sourceIconUrl} label={item.sourceName} size={28} borderRadius={2} />
                   <Typography variant="subtitle2" color="text.secondary">
                     {item.sourceName}
                   </Typography>
