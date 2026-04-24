@@ -1,4 +1,4 @@
-import { config as loadEnv } from 'dotenv';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
@@ -6,10 +6,49 @@ import { z } from 'zod';
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRootEnvPath = path.resolve(moduleDir, '..', '..', '..', '.env');
 const cwdEnvPath = path.resolve(process.cwd(), '.env');
+const repoManagedEnvKeys = [
+  'NODE_ENV',
+  'APP_URL',
+  'REDIS_URL',
+  'DATABASE_URL',
+  'DEMO_MODE',
+  'WORKER_CONCURRENCY',
+  'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'OPENROUTER_API_KEY',
+  'RESEND_API_KEY',
+  'EMAIL_FROM',
+  'ENABLE_EMAIL'
+];
 
-loadEnv({ path: repoRootEnvPath });
+function parseEnvFile(filePath: string) {
+  if (!existsSync(filePath)) return {};
+  const entries: Record<string, string> = {};
+  const content = readFileSync(filePath, 'utf8');
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const normalized = line.startsWith('export ') ? line.slice(7).trim() : line;
+    const separatorIndex = normalized.indexOf('=');
+    if (separatorIndex === -1) continue;
+    const key = normalized.slice(0, separatorIndex).trim();
+    let value = normalized.slice(separatorIndex + 1).trim();
+    if (!key) continue;
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    entries[key] = value;
+  }
+  return entries;
+}
+
+for (const key of repoManagedEnvKeys) {
+  delete process.env[key];
+}
+
+Object.assign(process.env, parseEnvFile(repoRootEnvPath));
 if (cwdEnvPath !== repoRootEnvPath) {
-  loadEnv({ path: cwdEnvPath, override: true });
+  Object.assign(process.env, parseEnvFile(cwdEnvPath));
 }
 
 const workerEnvSchema = z.object({

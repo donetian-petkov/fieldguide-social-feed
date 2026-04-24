@@ -6,6 +6,38 @@ import { fileURLToPath } from 'node:url';
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const rootEnvPath = path.join(rootDir, '.env');
 const mode = process.argv[2];
+const repoManagedEnvKeys = [
+  'NODE_ENV',
+  'APP_NAME',
+  'APP_URL',
+  'API_URL',
+  'WORKER_CONCURRENCY',
+  'PORT',
+  'WEB_PORT',
+  'DATABASE_URL',
+  'SHADOW_DATABASE_URL',
+  'REDIS_URL',
+  'COOKIE_SECRET',
+  'SESSION_TTL_HOURS',
+  'MODE_SWITCH_TTL_MINUTES',
+  'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'OPENROUTER_API_KEY',
+  'DEFAULT_AI_PROVIDER',
+  'SUMMARY_MODEL',
+  'TRANSLATION_MODEL',
+  'ASK_MODEL',
+  'NEWSLETTER_MODEL',
+  'RESEND_API_KEY',
+  'EMAIL_FROM',
+  'ENABLE_EMAIL',
+  'DEMO_MODE',
+  'SEED_USER_PASSWORD',
+  'SEED_DEMO_CONTENT',
+  'NEXT_PUBLIC_API_URL',
+  'NEXT_PUBLIC_DEMO_FALLBACK',
+  'NEXT_PUBLIC_ENABLE_DEMO_FALLBACK'
+];
 const servicesByMode = {
   dev: [
     { name: 'api', cwd: path.join(rootDir, 'apps/api'), command: 'tsx', args: ['watch', 'src/server.ts'] },
@@ -42,7 +74,18 @@ function parseEnvFile(filePath) {
   return entries;
 }
 
-const env = { ...parseEnvFile(rootEnvPath), ...process.env };
+function buildManagedEnv(baseEnv, ...layers) {
+  const env = { ...baseEnv };
+  for (const key of repoManagedEnvKeys) {
+    delete env[key];
+  }
+  for (const layer of layers) {
+    Object.assign(env, layer);
+  }
+  return env;
+}
+
+const env = buildManagedEnv(process.env, parseEnvFile(rootEnvPath));
 const shouldManageDocker = env.DEMO_MODE !== 'true';
 env.PATH = [
   path.join(rootDir, 'node_modules', '.bin'),
