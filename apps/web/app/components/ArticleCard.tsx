@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import BookmarkBorderRoundedIcon from '@mui/icons-material/BookmarkBorderRounded';
+import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded';
 import ChatBubbleOutlineRoundedIcon from '@mui/icons-material/ChatBubbleOutlineRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import IosShareRoundedIcon from '@mui/icons-material/IosShareRounded';
@@ -26,7 +27,7 @@ import {
 import type { ContentItem, ContentLanguageMode, InterfaceLanguage } from '@edu-feed/shared';
 import { resolveTranslation } from '@edu-feed/shared';
 
-import { useHealthQuery, useHideItemMutation, useSaveItemMutation, useShareItemMutation } from '../lib/api';
+import { useHealthQuery, useHideItemMutation, useSaveItemMutation, useShareItemMutation, useUnsaveItemMutation } from '../lib/api';
 import { useSessionViewer } from '../lib/session';
 import { AskAiCard } from './AskAiCard';
 import { ContentImage } from './ContentImage';
@@ -38,22 +39,28 @@ export function ArticleCard({
   languageMode,
   commentCount,
   showImage = true,
-  onHide
+  isSaved = false,
+  onHide,
+  onSavedChange
 }: {
   item: ContentItem;
   language: InterfaceLanguage;
   languageMode: ContentLanguageMode;
   commentCount: number;
   showImage?: boolean;
+  isSaved?: boolean;
   onHide?: (itemId: string) => void;
+  onSavedChange?: (itemId: string, nextSaved: boolean) => void;
 }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [savedState, setSavedState] = useState(isSaved);
   const { isAuthenticated, viewer } = useSessionViewer();
   const healthQuery = useHealthQuery();
   const [saveItem, saveItemState] = useSaveItemMutation();
+  const [unsaveItem, unsaveItemState] = useUnsaveItemMutation();
   const [hideItem] = useHideItemMutation();
   const [shareItem] = useShareItemMutation();
   const translation = resolveTranslation(item, language) || item.translations[0];
@@ -61,6 +68,11 @@ export function ArticleCard({
   const bulgarian = resolveTranslation(item, 'bg');
   const detailHref = `/item/${item.slug}`;
   const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
+  const saveBusy = saveItemState.isLoading || unsaveItemState.isLoading;
+
+  useEffect(() => {
+    setSavedState(isSaved);
+  }, [isSaved]);
 
   const navigateToDetail = () => {
     router.push(detailHref);
@@ -176,15 +188,28 @@ export function ArticleCard({
                 </Button>
               ) : (
                 <Button
-                  startIcon={<BookmarkBorderRoundedIcon />}
-                  variant="outlined"
-                  disabled={saveItemState.isLoading}
+                  startIcon={savedState ? <BookmarkRoundedIcon /> : <BookmarkBorderRoundedIcon />}
+                  variant={savedState ? 'contained' : 'outlined'}
+                  disabled={saveBusy}
                   onClick={async () => {
-                    await saveItem(item.id).unwrap().catch(() => undefined);
-                    setToast('Saved to your library.');
+                    try {
+                      if (savedState) {
+                        await unsaveItem(item.id).unwrap();
+                        setSavedState(false);
+                        onSavedChange?.(item.id, false);
+                        setToast('Removed from your library.');
+                      } else {
+                        await saveItem(item.id).unwrap();
+                        setSavedState(true);
+                        onSavedChange?.(item.id, true);
+                        setToast('Saved to your library.');
+                      }
+                    } catch {
+                      setToast(savedState ? 'Could not remove this item from your library.' : 'Could not save this item.');
+                    }
                   }}
                 >
-                  Save
+                  {saveBusy ? 'Saving...' : savedState ? 'Saved' : 'Save'}
                 </Button>
               )}
               <Button

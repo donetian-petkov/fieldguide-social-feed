@@ -21,6 +21,7 @@ import type {
 type MeResponse = {
   user: UserSettingsDto | null;
   albums?: AlbumDto[];
+  savedIds?: string[];
 };
 
 type FeedResponse = {
@@ -338,14 +339,14 @@ export const fieldguideApi = createApi({
         url: `/v1/items/${itemId}/save`,
         method: 'POST'
       }),
-      invalidatesTags: ['Feed', 'Albums']
+      invalidatesTags: ['Feed', 'Albums', 'Me']
     }),
     unsaveItem: builder.mutation<{ ok: boolean; savedIds: string[] }, string>({
       query: (itemId) => ({
         url: `/v1/items/${itemId}/save`,
         method: 'DELETE'
       }),
-      invalidatesTags: ['Feed', 'Albums']
+      invalidatesTags: ['Feed', 'Albums', 'Me']
     }),
     hideItem: builder.mutation<{ ok: boolean; hiddenIds: string[] }, string>({
       query: (itemId) => ({

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Box, Button, FormControl, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material';
 
 import { AppShell } from '../components/AppShell';
@@ -26,9 +26,15 @@ export default function CommunityPage() {
   const paginatedFeed = usePaginatedFeed({
     feed: 'community',
     fallbackItems: DEMO_FALLBACK_ENABLED ? fallback.items : [],
-    fallbackPinnedItems: []
+    fallbackPinnedItems: [],
+    fallbackSavedIds: DEMO_FALLBACK_ENABLED ? fallback.savedIds : []
   });
   const items = paginatedFeed.items;
+  const [savedIds, setSavedIds] = useState<string[]>(paginatedFeed.savedIds);
+
+  useEffect(() => {
+    setSavedIds(paginatedFeed.savedIds);
+  }, [paginatedFeed.savedIds]);
 
   return (
     <AppShell
@@ -125,6 +131,10 @@ export default function CommunityPage() {
               languageMode={viewer.contentLanguageMode}
               commentCount={getCommentsCountByItem(item.id)}
               showImage={viewer.imageMode === 'on'}
+              isSaved={savedIds.includes(item.id)}
+              onSavedChange={(itemId, nextSaved) => {
+                setSavedIds((current) => (nextSaved ? [...new Set([...current, itemId])] : current.filter((id) => id !== itemId)));
+              }}
             />
           ))}
 

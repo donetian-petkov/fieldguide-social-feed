@@ -672,6 +672,14 @@ export class PrismaStore implements AppStore {
     return { ok: true as const };
   }
 
+  async getSavedIds(username: string) {
+    const user = await this.requireUser(username);
+    return (await this.prisma.savedItem.findMany({
+      where: { userId: user.id },
+      select: { itemId: true }
+    })).map((entry) => entry.itemId);
+  }
+
   async getFeed(query: FeedQuery, username?: string | null): Promise<FeedResponse> {
     const viewer = username
       ? await this.prisma.user.findUnique({

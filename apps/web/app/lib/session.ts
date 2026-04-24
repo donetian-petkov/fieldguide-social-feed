@@ -14,6 +14,7 @@ export function useSessionViewer(fallbackViewer: UserSettingsDto = guestViewer) 
     viewer: user || fallbackViewer,
     apiViewer: user,
     isAuthenticated: !!user,
-    albums: meQuery.data?.albums || []
+    albums: meQuery.data?.albums || [],
+    savedIds: meQuery.data?.savedIds || []
   };
 }

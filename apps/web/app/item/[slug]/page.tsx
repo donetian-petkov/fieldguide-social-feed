@@ -20,6 +20,7 @@ import {
   useHealthQuery,
   useItemQuery,
   useSaveItemMutation,
+  useUnsaveItemMutation,
   useUpdateCommentMutation
 } from '../../lib/api';
 import { useSessionViewer } from '../../lib/session';
@@ -28,7 +29,7 @@ const COMMENT_EDIT_WINDOW_MS = 15 * 60 * 1000;
 
 export default function ItemPage({ params }: { params: { slug: string } }) {
   const fallback = DEMO_FALLBACK_ENABLED ? getItemModel(params.slug) : null;
-  const { viewer, isAuthenticated } = useSessionViewer();
+  const { viewer, isAuthenticated, savedIds } = useSessionViewer();
   const itemQuery = useItemQuery(params.slug);
   const healthQuery = useHealthQuery();
   const albumsQuery = useAlbumsQuery(undefined, {
@@ -37,6 +38,7 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
   const [createComment, createCommentState] = useCreateCommentMutation();
   const [updateComment, updateCommentState] = useUpdateCommentMutation();
   const [saveItem, saveItemState] = useSaveItemMutation();
+  const [unsaveItem, unsaveItemState] = useUnsaveItemMutation();
   const [addAlbumItem, addAlbumItemState] = useAddAlbumItemMutation();
   const [commentBody, setCommentBody] = useState('');
   const [commentMessage, setCommentMessage] = useState<string | null>(null);
@@ -44,6 +46,7 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
   const [selectedAlbumId, setSelectedAlbumId] = useState('');
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingBody, setEditingBody] = useState('');
+  const [savedState, setSavedState] = useState(false);
   const item = itemQuery.data?.item || fallback?.item || null;
   const comments = itemQuery.data?.comments || fallback?.comments || [];
   const relatedItems = fallback?.relatedItems || [];
@@ -53,12 +56,17 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
   const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
   const hasAiAudit =
     aiAvailable && viewer.role === 'admin' && Boolean(item?.ai.summaryAudit || item?.ai.classificationAudit || translatedArtifact?.aiAudit);
+  const saveBusy = saveItemState.isLoading || unsaveItemState.isLoading;
 
   useEffect(() => {
     if (!selectedAlbumId && albums[0]?.id) {
       setSelectedAlbumId(albums[0].id);
     }
   }, [albums, selectedAlbumId]);
+
+  useEffect(() => {
+    setSavedState(Boolean(isAuthenticated && item && savedIds.includes(item.id)));
+  }, [isAuthenticated, item, savedIds]);
 
   if (itemQuery.isLoading) {
     return (
@@ -239,17 +247,30 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
                   ) : (
                     <Button
                       variant="contained"
-                      disabled={saveItemState.isLoading}
+                      disabled={saveBusy}
                       onClick={async () => {
                         try {
-                          await saveItem(item.id).unwrap();
-                          setLibraryMessage('Saved to your library.');
+                          if (savedState) {
+                            await unsaveItem(item.id).unwrap();
+                            setSavedState(false);
+                            setLibraryMessage('Removed from your library.');
+                          } else {
+                            await saveItem(item.id).unwrap();
+                            setSavedState(true);
+                            setLibraryMessage('Saved to your library.');
+                          }
                         } catch (error) {
-                          setLibraryMessage(error instanceof Error ? error.message : 'Could not save this item.');
+                          setLibraryMessage(
+                            error instanceof Error
+                              ? error.message
+                              : savedState
+                                ? 'Could not remove this item from your library.'
+                                : 'Could not save this item.'
+                          );
                         }
                       }}
                     >
-                      {saveItemState.isLoading ? 'Saving...' : 'Save item'}
+                      {saveBusy ? 'Saving...' : savedState ? 'Saved item' : 'Save item'}
                     </Button>
                   )}
                   {isAuthenticated && albums.length ? (
@@ -326,6 +347,7 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
                 language={viewer.language}
                 languageMode={viewer.contentLanguageMode}
                 commentCount={0}
+                isSaved={savedIds.includes(relatedItem.id)}
               />
             ))}
           </Stack>

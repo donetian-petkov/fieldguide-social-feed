@@ -32,7 +32,8 @@ export async function registerMeRoutes(app: FastifyInstance, options: { store: A
     }
     return {
       user: request.currentUser,
-      albums: await options.store.getAlbums(request.currentUser.username)
+      albums: await options.store.getAlbums(request.currentUser.username),
+      savedIds: await options.store.getSavedIds(request.currentUser.username)
     };
   });
 

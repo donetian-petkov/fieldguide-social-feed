@@ -313,6 +313,10 @@ export class DemoStore {
     return { ok: true };
   }
 
+  getSavedIds(username: string) {
+    return [...(this.savedByUser.get(username) || new Set<string>())];
+  }
+
   getFeed(query: FeedQuery, username?: string | null): FeedResponse {
     const viewer = username ? this.requireUser(username) : null;
     const mode = viewer?.contentMode || 'standard';

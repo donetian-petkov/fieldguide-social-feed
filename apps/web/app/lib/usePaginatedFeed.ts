@@ -16,14 +16,16 @@ type UsePaginatedFeedOptions = {
   feed: SubjectFeed;
   fallbackItems: ContentItem[];
   fallbackPinnedItems: ContentItem[];
+  fallbackSavedIds: string[];
   skip?: boolean;
 };
 
-export function usePaginatedFeed({ feed, fallbackItems, fallbackPinnedItems, skip = false }: UsePaginatedFeedOptions) {
+export function usePaginatedFeed({ feed, fallbackItems, fallbackPinnedItems, fallbackSavedIds, skip = false }: UsePaginatedFeedOptions) {
   const [page, setPage] = useState(1);
   const [refreshToken, setRefreshToken] = useState(0);
   const [apiItems, setApiItems] = useState<ContentItem[]>([]);
   const [apiPinnedItems, setApiPinnedItems] = useState<ContentItem[]>([]);
+  const [apiSavedIds, setApiSavedIds] = useState<string[]>([]);
   const [apiPagination, setApiPagination] = useState<FeedPageInfo | null>(null);
   const feedQuery = useFeedQuery(
     {
@@ -40,6 +42,7 @@ export function usePaginatedFeed({ feed, fallbackItems, fallbackPinnedItems, ski
     setRefreshToken(0);
     setApiItems([]);
     setApiPinnedItems([]);
+    setApiSavedIds([]);
     setApiPagination(null);
   }, [feed, skip]);
 
@@ -51,6 +54,7 @@ export function usePaginatedFeed({ feed, fallbackItems, fallbackPinnedItems, ski
 
     setApiItems((current) => (page === 1 ? nextData.items : mergeItems(current, nextData.items)));
     setApiPinnedItems(nextData.pinnedItems);
+    setApiSavedIds(nextData.savedIds);
     setApiPagination(nextData.pagination);
   }, [feedQuery.data, page]);
 
@@ -74,6 +78,7 @@ export function usePaginatedFeed({ feed, fallbackItems, fallbackPinnedItems, ski
   return {
     items: hasApiSnapshot ? apiItems : fallbackVisibleItems,
     pinnedItems: hasApiSnapshot ? apiPinnedItems : fallbackPinnedItems,
+    savedIds: hasApiSnapshot ? apiSavedIds : fallbackSavedIds,
     pagination: hasApiSnapshot ? apiPagination : fallbackPagination,
     isError: feedQuery.isError,
     isFetching: feedQuery.isFetching,
@@ -82,6 +87,7 @@ export function usePaginatedFeed({ feed, fallbackItems, fallbackPinnedItems, ski
       setPage(1);
       setApiItems([]);
       setApiPinnedItems([]);
+      setApiSavedIds([]);
       setApiPagination(null);
       setRefreshToken((current) => current + 1);
     },

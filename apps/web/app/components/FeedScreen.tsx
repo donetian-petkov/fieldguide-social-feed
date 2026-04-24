@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import KeyboardDoubleArrowUpRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowUpRounded';
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
@@ -25,7 +25,8 @@ export function FeedScreen({
   subtitle,
   viewer,
   items,
-  pinnedItems
+  pinnedItems,
+  savedIds: fallbackSavedIds
 }: {
   feed: SubjectFeed;
   title: string;
@@ -33,6 +34,7 @@ export function FeedScreen({
   viewer: UserSettingsDto;
   items: ContentItem[];
   pinnedItems: ContentItem[];
+  savedIds: string[];
 }) {
   const router = useRouter();
   const [hiddenIds, setHiddenIds] = useState<string[]>([]);
@@ -49,11 +51,20 @@ export function FeedScreen({
     feed,
     fallbackItems,
     fallbackPinnedItems,
+    fallbackSavedIds,
     skip: isSavedGuestView
   });
   const effectiveItems = paginatedFeed.items;
   const effectivePinnedItems = paginatedFeed.pinnedItems;
-  const visibleItems = effectiveItems.filter((item) => !hiddenIds.includes(item.id));
+  const [savedIds, setSavedIds] = useState<string[]>(paginatedFeed.savedIds);
+
+  useEffect(() => {
+    setSavedIds(paginatedFeed.savedIds);
+  }, [paginatedFeed.savedIds]);
+
+  const visibleItems = effectiveItems.filter(
+    (item) => !hiddenIds.includes(item.id) && (feed !== 'saved' || !session.isAuthenticated || savedIds.includes(item.id))
+  );
 
   return (
     <AppShell title={title} subtitle={subtitle} viewer={resolvedViewer} onRefresh={paginatedFeed.refresh}>
@@ -180,9 +191,13 @@ export function FeedScreen({
                 languageMode={resolvedLanguageMode}
                 commentCount={getCommentsCountByItem(item.id)}
                 showImage={resolvedImageMode === 'on'}
+                isSaved={savedIds.includes(item.id)}
                 onHide={(itemId) => {
                   setHiddenIds((current) => [...current, itemId]);
                   setToast('Item hidden from the current view.');
+                }}
+                onSavedChange={(itemId, nextSaved) => {
+                  setSavedIds((current) => (nextSaved ? [...new Set([...current, itemId])] : current.filter((id) => id !== itemId)));
                 }}
               />
             ))}

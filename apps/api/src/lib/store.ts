@@ -81,6 +81,7 @@ export interface AppStore {
   switchContentMode(username: string, nextMode: ContentMode, password?: string | null): StoreResult<ModeSwitchResult>;
   forgotPassword(identifier: string): StoreResult<{ ok: boolean; previewToken: string | null }>;
   resetPassword(token: string, nextPassword: string): StoreResult<{ ok: boolean }>;
+  getSavedIds(username: string): StoreResult<string[]>;
   getFeed(query: FeedQuery, username?: string | null): StoreResult<FeedResponse>;
   getItem(idOrSlug: string, username?: string | null): StoreResult<ContentItem | null>;
   recordItemView(username: string, itemId: string): StoreResult<{ ok: boolean }>;
