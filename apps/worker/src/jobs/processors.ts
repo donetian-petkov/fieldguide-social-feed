@@ -23,6 +23,7 @@ import { z } from 'zod';
 
 import { getWorkerConfig } from '../config.js';
 import type { AiEnrichmentJobPayload, GeneratedStoryJobPayload, IngestionJobPayload, NewsletterJobPayload } from './types.js';
+import { toJobId } from './job-ids.js';
 import { buildPreferenceWeights, mergeSelectedCandidates, rankNewsletterCandidates } from './newsletter-ranking.js';
 
 const config = getWorkerConfig();
@@ -1871,62 +1872,74 @@ export async function bootstrapRecurringJobs(queues: SchedulerQueues) {
 
   await Promise.all(
     feeds.flatMap((feed) => [
-      queues.ingestion.add(
-        `source-startup:${feed.sourceId}`,
-        {
-          sourceId: feed.sourceId,
-          feedUrl: feed.feedUrl
-        },
-        {
-          jobId: `source-startup:${feed.sourceId}`,
-          removeOnComplete: true,
-          removeOnFail: 50
-        }
-      ),
-      queues.ingestion.add(
-        `source:${feed.sourceId}`,
-        {
-          sourceId: feed.sourceId,
-          feedUrl: feed.feedUrl
-        },
-        {
-          jobId: `source:${feed.sourceId}`,
-          repeat: {
-            every: Math.max(feed.pollIntervalSec, 60) * 1000
+      (() => {
+        const startupJobId = toJobId('source-startup', feed.sourceId);
+        return queues.ingestion.add(
+          startupJobId,
+          {
+            sourceId: feed.sourceId,
+            feedUrl: feed.feedUrl
           },
-          removeOnComplete: true,
-          removeOnFail: 50
-        }
-      )
+          {
+            jobId: startupJobId,
+            removeOnComplete: true,
+            removeOnFail: 50
+          }
+        );
+      })(),
+      (() => {
+        const repeatJobId = toJobId('source', feed.sourceId);
+        return queues.ingestion.add(
+          repeatJobId,
+          {
+            sourceId: feed.sourceId,
+            feedUrl: feed.feedUrl
+          },
+          {
+            jobId: repeatJobId,
+            repeat: {
+              every: Math.max(feed.pollIntervalSec, 60) * 1000
+            },
+            removeOnComplete: true,
+            removeOnFail: 50
+          }
+        );
+      })()
     ])
   );
 
   const newsletterRepeatableJobs = await queues.newsletter.getRepeatableJobs();
   await Promise.all(
     newsletterRepeatableJobs
-      .filter((job) => job.id?.startsWith('newsletter:'))
+      .filter((job) => job.id?.startsWith('newsletter-'))
       .map((job) => queues.newsletter.removeRepeatableByKey(job.key))
   );
 
   await Promise.all(
-    users.map((user) =>
-      queues.newsletter.add(
-        `newsletter:${user.username}:${user.settings?.newsletterCadence || 'weekly'}`,
+    users.map((user) => {
+      const cadence = user.settings?.newsletterCadence || 'weekly';
+      const newsletterJobId = toJobId('newsletter', user.username, cadence);
+      return queues.newsletter.add(
+        newsletterJobId,
         {
           username: user.username,
-          mode: user.settings?.newsletterCadence || 'weekly'
+          mode: cadence
         },
         {
-          jobId: `newsletter:${user.username}:${user.settings?.newsletterCadence || 'weekly'}`,
+          jobId: newsletterJobId,
           repeat: {
-            every: (user.settings?.newsletterCadence || 'weekly') === 'daily' ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
+            every: cadence === 'daily' ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
           },
           removeOnComplete: true,
           removeOnFail: 50
         }
-      )
-    )
+      );
+    })
   );
+}
+
+export async function waitForProcessorServicesReady() {
+  await prisma.$queryRaw`SELECT 1`;
 }
 
 export async function shutdownProcessorServices() {
