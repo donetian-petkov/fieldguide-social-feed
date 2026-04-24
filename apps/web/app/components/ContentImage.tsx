@@ -79,7 +79,8 @@ export function ContentImage({
           component="img"
           src={proxiedSrc}
           alt={alt}
-          loading="lazy"
+          loading={compact ? 'lazy' : 'eager'}
+          decoding="async"
           onLoad={() => setStatus('loaded')}
           onError={() => setStatus('error')}
           sx={{
@@ -88,7 +89,9 @@ export function ContentImage({
             width: '100%',
             height: '100%',
             objectFit: 'cover',
-            display: status === 'loaded' ? 'block' : 'none'
+            opacity: status === 'loaded' ? 1 : 0,
+            transition: 'opacity 180ms ease',
+            pointerEvents: 'none'
           }}
         />
       ) : null}

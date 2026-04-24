@@ -53,6 +53,7 @@ export function SourceMark({
           src={proxiedSrc}
           alt=""
           aria-hidden="true"
+          decoding="async"
           onLoad={() => setStatus('loaded')}
           onError={() => setStatus('error')}
           sx={{
@@ -61,7 +62,9 @@ export function SourceMark({
             width: size,
             height: size,
             borderRadius,
-            display: status === 'loaded' ? 'block' : 'none'
+            opacity: status === 'loaded' ? 1 : 0,
+            transition: 'opacity 160ms ease',
+            pointerEvents: 'none'
           }}
         />
       ) : null}
