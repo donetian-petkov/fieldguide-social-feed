@@ -347,6 +347,54 @@ test('admin generated story drafts require admin access and approval before publ
   }
 });
 
+test('media relay proxies remote images through the API', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    assert.equal(String(input), 'https://example.com/image.png');
+    assert.equal((init?.headers as Record<string, string>)['user-agent'], 'FieldguideMediaRelay/0.1 (+http://localhost:4000)');
+    return new Response(Buffer.from('image-bytes'), {
+      status: 200,
+      headers: {
+        'content-type': 'image/png'
+      }
+    });
+  };
+
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/v1/media?url=${encodeURIComponent('https://example.com/image.png')}`
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['content-type'], 'image/png');
+    assert.match(String(response.headers['cache-control']), /max-age=3600/);
+    assert.equal(response.body, 'image-bytes');
+  } finally {
+    globalThis.fetch = originalFetch;
+    await app.close();
+  }
+});
+
+test('media relay rejects non-http image protocols', async () => {
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/v1/media?url=${encodeURIComponent('ftp://example.com/image.png')}`
+    });
+
+    assert.equal(response.statusCode, 400);
+  } finally {
+    await app.close();
+  }
+});
+
 test('admin pinning stays scoped to the item feed and can be cleared again', async () => {
   const { store, queues } = createHarness();
   const app = await buildApp({ config: testConfig, store, queues });

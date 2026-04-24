@@ -16,6 +16,7 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerFeedRoutes } from './routes/feed.js';
 import { registerItemRoutes } from './routes/items.js';
+import { registerMediaRoutes } from './routes/media.js';
 import { registerMeRoutes } from './routes/me.js';
 
 declare module 'fastify' {
@@ -85,6 +86,7 @@ export async function buildApp(options?: {
     ...(await resolveAiCapabilities(prisma, config))
   }));
 
+  await registerMediaRoutes(app);
   await registerAuthRoutes(app, { store, config });
   await registerFeedRoutes(app, { store });
   await registerItemRoutes(app, { store });

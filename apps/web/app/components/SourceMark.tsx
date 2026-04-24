@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import PublicRoundedIcon from '@mui/icons-material/PublicRounded';
 import { Box } from '@mui/material';
 
+import { toMediaProxyUrl } from '../lib/media';
+
 export function SourceMark({
   src,
   label,
@@ -15,12 +17,13 @@ export function SourceMark({
   size?: number;
   borderRadius?: number;
 }) {
-  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>(src ? 'loading' : 'error');
+  const proxiedSrc = useMemo(() => toMediaProxyUrl(src), [src]);
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>(proxiedSrc ? 'loading' : 'error');
   const initial = useMemo(() => label?.trim().charAt(0).toUpperCase() || null, [label]);
 
   useEffect(() => {
-    setStatus(src ? 'loading' : 'error');
-  }, [src]);
+    setStatus(proxiedSrc ? 'loading' : 'error');
+  }, [proxiedSrc]);
 
   return (
     <Box sx={{ position: 'relative', width: size, height: size, flex: '0 0 auto' }}>
@@ -44,10 +47,10 @@ export function SourceMark({
           {initial || <PublicRoundedIcon sx={{ fontSize: Math.max(16, Math.round(size * 0.55)) }} />}
         </Box>
       ) : null}
-      {src ? (
+      {proxiedSrc ? (
         <Box
           component="img"
-          src={src}
+          src={proxiedSrc}
           alt=""
           aria-hidden="true"
           onLoad={() => setStatus('loaded')}

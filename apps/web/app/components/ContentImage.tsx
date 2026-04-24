@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import ImageNotSupportedRoundedIcon from '@mui/icons-material/ImageNotSupportedRounded';
 import { Box, Stack, Typography } from '@mui/material';
 
+import { toMediaProxyUrl } from '../lib/media';
 import { SourceMark } from './SourceMark';
 
 type ResponsiveHeight = number | string | Partial<Record<'xs' | 'sm' | 'md' | 'lg' | 'xl', number | string>>;
@@ -25,11 +26,12 @@ export function ContentImage({
   compact?: boolean;
   sx?: Record<string, unknown>;
 }) {
-  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>(src ? 'loading' : 'error');
+  const proxiedSrc = toMediaProxyUrl(src);
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>(proxiedSrc ? 'loading' : 'error');
 
   useEffect(() => {
-    setStatus(src ? 'loading' : 'error');
-  }, [src]);
+    setStatus(proxiedSrc ? 'loading' : 'error');
+  }, [proxiedSrc]);
 
   return (
     <Box
@@ -72,10 +74,10 @@ export function ContentImage({
           </Stack>
         </Box>
       ) : null}
-      {src ? (
+      {proxiedSrc ? (
         <Box
           component="img"
-          src={src}
+          src={proxiedSrc}
           alt={alt}
           loading="lazy"
           onLoad={() => setStatus('loaded')}
