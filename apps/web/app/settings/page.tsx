@@ -77,7 +77,11 @@ export default function SettingsPage() {
   }
 
   return (
-    <AppShell title="Settings" subtitle="Visual presets, content protection, newsletters, and AI preferences." viewer={viewer}>
+    <AppShell
+      title="Settings"
+      subtitle={aiAvailable ? 'Visual presets, content protection, newsletters, and AI preferences.' : 'Visual presets, content protection, and newsletter preferences.'}
+      viewer={viewer}
+    >
       <Box
         sx={{
           display: 'grid',

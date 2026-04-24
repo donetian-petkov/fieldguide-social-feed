@@ -50,8 +50,9 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
   const translation = item ? item.translations.find((entry) => entry.language === viewer.language) || item.translations[0] : null;
   const albums = albumsQuery.data?.albums || [];
   const translatedArtifact = item?.translations.find((entry) => entry.aiAudit) || null;
-  const hasAiAudit = viewer.role === 'admin' && Boolean(item?.ai.summaryAudit || item?.ai.classificationAudit || translatedArtifact?.aiAudit);
   const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
+  const hasAiAudit =
+    aiAvailable && viewer.role === 'admin' && Boolean(item?.ai.summaryAudit || item?.ai.classificationAudit || translatedArtifact?.aiAudit);
 
   useEffect(() => {
     if (!selectedAlbumId && albums[0]?.id) {

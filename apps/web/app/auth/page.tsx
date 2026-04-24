@@ -5,9 +5,13 @@ import { Box, Typography } from '@mui/material';
 import { AppShell } from '../components/AppShell';
 import { AuthPanel } from '../components/AuthPanel';
 import { SectionCard } from '../components/SectionCard';
+import { useHealthQuery } from '../lib/api';
 import { guestViewer } from '../lib/demo';
 
 export default function AuthPage() {
+  const healthQuery = useHealthQuery();
+  const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
+
   return (
     <AppShell title="Account" subtitle="Login, register, and unlock protected content controls." viewer={guestViewer}>
       <Box
@@ -26,7 +30,9 @@ export default function AuthPage() {
         <Box>
           <SectionCard title="Why sign in?" eyebrow="Account features">
             <Typography variant="body2" color="text.secondary">
-              Sign-in enables custom albums, saved articles, community submissions, protected Kid and Adult mode switching, newsletters, and account-scoped AI preferences.
+              {aiAvailable
+                ? 'Sign-in enables custom albums, saved articles, community submissions, protected Kid and Adult mode switching, newsletters, and account-scoped AI preferences.'
+                : 'Sign-in enables custom albums, saved articles, community submissions, protected Kid and Adult mode switching, and newsletters.'}
             </Typography>
           </SectionCard>
         </Box>
