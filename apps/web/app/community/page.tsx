@@ -35,9 +35,10 @@ export default function CommunityPage() {
       title={fallback.title}
       subtitle="Approved community links and essays stay separate from the curated editorial source feeds."
       viewer={viewer}
+      onRefresh={paginatedFeed.refresh}
     >
       <Stack spacing={3}>
-        <FeedToolbar feed="community" language={viewer.language} />
+        <FeedToolbar feed="community" language={viewer.language} onRefresh={paginatedFeed.refresh} />
 
         <SectionCard title="Submit to community" eyebrow="Moderated queue">
           <Stack spacing={1.5}>

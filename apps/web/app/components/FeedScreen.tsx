@@ -56,9 +56,9 @@ export function FeedScreen({
   const visibleItems = effectiveItems.filter((item) => !hiddenIds.includes(item.id));
 
   return (
-    <AppShell title={title} subtitle={subtitle} viewer={resolvedViewer}>
+    <AppShell title={title} subtitle={subtitle} viewer={resolvedViewer} onRefresh={paginatedFeed.refresh}>
       <Stack spacing={3}>
-        <FeedToolbar feed={feed} language={resolvedLanguage} />
+        <FeedToolbar feed={feed} language={resolvedLanguage} onRefresh={paginatedFeed.refresh} />
 
         <Box
           sx={{
@@ -257,7 +257,7 @@ export function FeedScreen({
           size="small"
           color="primary"
           aria-label="Refresh feed"
-          onClick={() => router.refresh()}
+          onClick={() => paginatedFeed.refresh()}
         >
           <RefreshRoundedIcon />
         </Fab>

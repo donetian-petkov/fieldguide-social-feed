@@ -13,7 +13,15 @@ import { SUBJECT_FEED_LABELS } from '@edu-feed/shared';
 
 import { FEED_ORDER } from '../lib/demo';
 
-export function FeedToolbar({ feed, language }: { feed: SubjectFeed; language: 'en' | 'bg' }) {
+export function FeedToolbar({
+  feed,
+  language,
+  onRefresh
+}: {
+  feed: SubjectFeed;
+  language: 'en' | 'bg';
+  onRefresh?: () => void;
+}) {
   const router = useRouter();
   const touchStartX = useRef<number | null>(null);
   const currentIndex = FEED_ORDER.indexOf(feed);
@@ -61,7 +69,7 @@ export function FeedToolbar({ feed, language }: { feed: SubjectFeed; language: '
           </Button>
         </Stack>
         <Stack direction="row" spacing={1}>
-          <Button startIcon={<RefreshRoundedIcon />} variant="contained" onClick={() => router.refresh()}>
+          <Button startIcon={<RefreshRoundedIcon />} variant="contained" onClick={() => onRefresh?.() || router.refresh()}>
             Refresh
           </Button>
           <Button

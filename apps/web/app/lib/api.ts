@@ -94,7 +94,7 @@ export const fieldguideApi = createApi({
       query: () => '/v1/me',
       providesTags: ['Me', 'Albums']
     }),
-    feed: builder.query<FeedResponse, { feed: SubjectFeed; page?: number; pageSize?: number }>({
+    feed: builder.query<FeedResponse, { feed: SubjectFeed; page?: number; pageSize?: number; refreshToken?: number }>({
       query: ({ feed, page = 1, pageSize = 20 }) => `/v1/feed?feed=${feed}&page=${page}&pageSize=${pageSize}`,
       providesTags: (_result, _error, args) => ['Feed', { type: 'Feed', id: args.feed }]
     }),

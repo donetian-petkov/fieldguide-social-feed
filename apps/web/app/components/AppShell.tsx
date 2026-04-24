@@ -58,8 +58,9 @@ export function AppShell({
   title,
   subtitle,
   viewer,
-  children
-}: PropsWithChildren<{ title: string; subtitle: string; viewer: UserSettingsDto }>) {
+  children,
+  onRefresh
+}: PropsWithChildren<{ title: string; subtitle: string; viewer: UserSettingsDto; onRefresh?: () => void }>) {
   const router = useRouter();
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -89,6 +90,10 @@ export function AppShell({
       }
       if (event.key === 'r' || event.key === 'R') {
         event.preventDefault();
+        if (onRefresh) {
+          onRefresh();
+          return;
+        }
         router.refresh();
         return;
       }
@@ -148,7 +153,7 @@ export function AppShell({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [aiAvailable, pathname, router]);
+  }, [aiAvailable, onRefresh, pathname, router]);
 
   const navItems = [
     { href: '/feed/history', label: 'Main feed', icon: <AutoAwesomeRoundedIcon /> },

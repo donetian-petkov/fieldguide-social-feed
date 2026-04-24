@@ -21,6 +21,7 @@ type UsePaginatedFeedOptions = {
 
 export function usePaginatedFeed({ feed, fallbackItems, fallbackPinnedItems, skip = false }: UsePaginatedFeedOptions) {
   const [page, setPage] = useState(1);
+  const [refreshToken, setRefreshToken] = useState(0);
   const [apiItems, setApiItems] = useState<ContentItem[]>([]);
   const [apiPinnedItems, setApiPinnedItems] = useState<ContentItem[]>([]);
   const [apiPagination, setApiPagination] = useState<FeedPageInfo | null>(null);
@@ -28,13 +29,15 @@ export function usePaginatedFeed({ feed, fallbackItems, fallbackPinnedItems, ski
     {
       feed,
       page,
-      pageSize: DEFAULT_FEED_PAGE_SIZE
+      pageSize: DEFAULT_FEED_PAGE_SIZE,
+      refreshToken
     },
     { skip }
   );
 
   useEffect(() => {
     setPage(1);
+    setRefreshToken(0);
     setApiItems([]);
     setApiPinnedItems([]);
     setApiPagination(null);
@@ -75,6 +78,13 @@ export function usePaginatedFeed({ feed, fallbackItems, fallbackPinnedItems, ski
     isError: feedQuery.isError,
     isFetching: feedQuery.isFetching,
     isLoading: feedQuery.isLoading,
+    refresh: () => {
+      setPage(1);
+      setApiItems([]);
+      setApiPinnedItems([]);
+      setApiPagination(null);
+      setRefreshToken((current) => current + 1);
+    },
     loadMore: () => {
       const activePagination = hasApiSnapshot ? apiPagination : fallbackPagination;
       if (!activePagination?.hasMore || feedQuery.isFetching) {
