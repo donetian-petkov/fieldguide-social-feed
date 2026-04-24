@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { UserSettingsDto } from '@edu-feed/shared';
 import { Alert, Box, Button, FormControl, InputLabel, MenuItem, Select, Snackbar, Stack, Typography } from '@mui/material';
 
+import { AdminSectionNav } from '../../components/AdminSectionNav';
 import { AppShell } from '../../components/AppShell';
 import { SectionCard } from '../../components/SectionCard';
 import { DEMO_FALLBACK_ENABLED, getAdminModel, getEmptyAdminModel } from '../../lib/demo';
@@ -46,66 +47,69 @@ export default function AdminUsersPage() {
 
   return (
     <AppShell title="Admin Users" subtitle="Roles, protected mode eligibility, and newsletter preferences." viewer={viewer}>
-      <Box
-        sx={{
-          display: 'grid',
-          gap: 2,
-          gridTemplateColumns: {
-            xs: '1fr',
-            md: 'repeat(2, minmax(0, 1fr))'
-          }
-        }}
-      >
-        {model.users.map((user) => {
-          const draftRole = roleDrafts[user.username] || user.role;
+      <Box sx={{ display: 'grid', gap: 3 }}>
+        <AdminSectionNav />
+        <Box
+          sx={{
+            display: 'grid',
+            gap: 2,
+            gridTemplateColumns: {
+              xs: '1fr',
+              md: 'repeat(2, minmax(0, 1fr))'
+            }
+          }}
+        >
+          {model.users.map((user) => {
+            const draftRole = roleDrafts[user.username] || user.role;
 
-          return (
-            <Box key={user.username}>
-              <SectionCard title={user.displayName} eyebrow={user.role}>
-                <Stack spacing={1.25}>
-                  <Typography variant="body2">Current mode: {user.contentMode}</Typography>
-                  <Typography variant="body2">Newsletter: {user.newsletterEnabled ? 'Enabled' : 'Disabled'}</Typography>
-                  <Typography variant="body2">Protected modes: {user.protectedModeEnabled ? 'Allowed' : 'Disabled'}</Typography>
-                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
-                    <FormControl size="small" sx={{ minWidth: 160 }}>
-                      <InputLabel id={`role-select-${user.username}`}>Role</InputLabel>
-                      <Select
-                        labelId={`role-select-${user.username}`}
-                        label="Role"
-                        value={draftRole}
-                        onChange={(event) =>
-                          setRoleDrafts((current) => ({
-                            ...current,
-                            [user.username]: event.target.value as UserSettingsDto['role']
-                          }))
-                        }
+            return (
+              <Box key={user.username}>
+                <SectionCard title={user.displayName} eyebrow={user.role}>
+                  <Stack spacing={1.25}>
+                    <Typography variant="body2">Current mode: {user.contentMode}</Typography>
+                    <Typography variant="body2">Newsletter: {user.newsletterEnabled ? 'Enabled' : 'Disabled'}</Typography>
+                    <Typography variant="body2">Protected modes: {user.protectedModeEnabled ? 'Allowed' : 'Disabled'}</Typography>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
+                      <FormControl size="small" sx={{ minWidth: 160 }}>
+                        <InputLabel id={`role-select-${user.username}`}>Role</InputLabel>
+                        <Select
+                          labelId={`role-select-${user.username}`}
+                          label="Role"
+                          value={draftRole}
+                          onChange={(event) =>
+                            setRoleDrafts((current) => ({
+                              ...current,
+                              [user.username]: event.target.value as UserSettingsDto['role']
+                            }))
+                          }
+                        >
+                          <MenuItem value="user">User</MenuItem>
+                          <MenuItem value="admin">Admin</MenuItem>
+                        </Select>
+                      </FormControl>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        disabled={draftRole === user.role || setUserRoleState.isLoading}
+                        onClick={() => void handleRoleSave(user.username, draftRole)}
                       >
-                        <MenuItem value="user">User</MenuItem>
-                        <MenuItem value="admin">Admin</MenuItem>
-                      </Select>
-                    </FormControl>
+                        Save Role
+                      </Button>
+                    </Stack>
                     <Button
                       variant="outlined"
                       size="small"
-                      disabled={draftRole === user.role || setUserRoleState.isLoading}
-                      onClick={() => void handleRoleSave(user.username, draftRole)}
+                      color={user.protectedModeEnabled ? 'error' : 'success'}
+                      onClick={() => void handleSuspend(user.username, user.protectedModeEnabled)}
                     >
-                      Save Role
+                      {user.protectedModeEnabled ? 'Suspend User' : 'Restore User'}
                     </Button>
                   </Stack>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    color={user.protectedModeEnabled ? 'error' : 'success'}
-                    onClick={() => void handleSuspend(user.username, user.protectedModeEnabled)}
-                  >
-                    {user.protectedModeEnabled ? 'Suspend User' : 'Restore User'}
-                  </Button>
-                </Stack>
-              </SectionCard>
-            </Box>
-          );
-        })}
+                </SectionCard>
+              </Box>
+            );
+          })}
+        </Box>
       </Box>
       {adminQuery.isError ? <Alert sx={{ mt: 3 }} severity="warning">Admin user data could not be loaded from the API.</Alert> : null}
       <Snackbar open={!!toast} autoHideDuration={2400} message={toast || ''} onClose={() => setToast(null)} />

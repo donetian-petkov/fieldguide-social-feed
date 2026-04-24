@@ -5,6 +5,7 @@ import { Alert, Box, Button, Chip, Snackbar, Stack, Typography } from '@mui/mate
 
 import type { ContentItem } from '@edu-feed/shared';
 
+import { AdminSectionNav } from '../../components/AdminSectionNav';
 import { AppShell } from '../../components/AppShell';
 import { SectionCard } from '../../components/SectionCard';
 import { DEMO_FALLBACK_ENABLED, getAdminModel, getEmptyAdminModel } from '../../lib/demo';
@@ -93,6 +94,7 @@ export default function AdminModerationPage() {
   return (
     <AppShell title="Admin Moderation" subtitle="Comment locks, article tags, removals, and the submission queue." viewer={viewer}>
       <Box sx={{ display: 'grid', gap: 3 }}>
+        <AdminSectionNav />
         <SectionCard title="Submission Queue" eyebrow="Community approvals">
           <Box
             sx={{

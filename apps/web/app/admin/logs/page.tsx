@@ -2,6 +2,7 @@
 
 import { Alert, Box, Typography } from '@mui/material';
 
+import { AdminSectionNav } from '../../components/AdminSectionNav';
 import { AppShell } from '../../components/AppShell';
 import { SectionCard } from '../../components/SectionCard';
 import { DEMO_FALLBACK_ENABLED, getAdminModel, getEmptyAdminModel } from '../../lib/demo';
@@ -17,6 +18,7 @@ export default function AdminLogsPage() {
   return (
     <AppShell title="Admin Logs" subtitle="Operational visibility hidden from end users." viewer={viewer}>
       <Box sx={{ display: 'grid', gap: 2 }}>
+        <AdminSectionNav />
         {model.errorLogs.map((log) => (
           <Box key={log.id}>
             <SectionCard title={log.scope} eyebrow={log.level}>

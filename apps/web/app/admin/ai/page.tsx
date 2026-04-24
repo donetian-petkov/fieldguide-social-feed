@@ -17,6 +17,7 @@ import {
 
 import type { AiModelConfig, GeneratedStoryDraftDto, SubjectTag } from '@edu-feed/shared';
 
+import { AdminSectionNav } from '../../components/AdminSectionNav';
 import { AppShell } from '../../components/AppShell';
 import { SectionCard } from '../../components/SectionCard';
 import { DEMO_FALLBACK_ENABLED, getAdminModel, getEmptyAdminModel } from '../../lib/demo';
@@ -117,6 +118,9 @@ export default function AdminAiPage() {
           }
         }}
       >
+        <Box sx={{ gridColumn: { xs: 'auto', md: '1 / -1' } }}>
+          <AdminSectionNav />
+        </Box>
         <Box>
           <SectionCard title="Configuration" eyebrow={form.provider}>
             <Stack spacing={2}>

@@ -15,6 +15,7 @@ import {
 
 import type { SourceDefinition, SubjectTag } from '@edu-feed/shared';
 
+import { AdminSectionNav } from '../../components/AdminSectionNav';
 import { AppShell } from '../../components/AppShell';
 import { SectionCard } from '../../components/SectionCard';
 import { DEMO_FALLBACK_ENABLED, getAdminModel, getEmptyAdminModel } from '../../lib/demo';
@@ -132,6 +133,7 @@ export default function AdminSourcesPage() {
   return (
     <AppShell title="Admin Sources" subtitle="Add, edit, pause, resume, and inspect predefined feeds." viewer={viewer}>
       <Box sx={{ display: 'grid', gap: 3 }}>
+        <AdminSectionNav />
         <SectionCard title={editingSourceId ? 'Edit Source' : 'Add Source'} eyebrow="Curated ingestion">
           <Box
             sx={{

@@ -32,6 +32,7 @@ import {
 import type { SubjectFeed, UserSettingsDto } from '@edu-feed/shared';
 
 import { useHealthQuery, useLogoutMutation } from '../lib/api';
+import { ADMIN_NAV_ITEMS, isAdminNavActive } from '../lib/admin-nav';
 import { FEED_ORDER, normalizeFeedSegment } from '../lib/demo';
 import { useSessionViewer } from '../lib/session';
 
@@ -161,7 +162,6 @@ export function AppShell({
     { href: '/community', label: 'Community', icon: <ForumRoundedIcon /> },
     ...(isAuthenticated ? [{ href: `/profile/${resolvedViewer.username}`, label: 'Profile', icon: <PersonRoundedIcon /> }] : []),
     { href: '/settings', label: 'Settings', icon: <SettingsRoundedIcon /> },
-    ...(isAuthenticated && resolvedViewer.role === 'admin' ? [{ href: '/admin', label: 'Admin', icon: <ShieldRoundedIcon /> }] : []),
     ...(!isAuthenticated ? [{ href: '/auth', label: 'Login', icon: <PersonRoundedIcon /> }] : [])
   ];
 
@@ -175,12 +175,41 @@ export function AppShell({
       </Box>
       <List sx={{ px: 0 }}>
         {navItems.map((item) => (
-          <ListItemButton component={Link} href={item.href} key={item.href} onClick={() => setDrawerOpen(false)}>
+          <ListItemButton
+            component={Link}
+            href={item.href}
+            key={item.href}
+            onClick={() => setDrawerOpen(false)}
+            selected={pathname === item.href}
+          >
             <ListItemIcon>{item.icon}</ListItemIcon>
             <ListItemText primary={item.label} />
           </ListItemButton>
         ))}
       </List>
+      {isAuthenticated && resolvedViewer.role === 'admin' ? (
+        <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
+          <Typography variant="overline" color="text.secondary" sx={{ px: 2 }}>
+            Admin Tools
+          </Typography>
+          <List sx={{ px: 0 }}>
+            {ADMIN_NAV_ITEMS.map((item) => (
+              <ListItemButton
+                component={Link}
+                href={item.href}
+                key={item.href}
+                onClick={() => setDrawerOpen(false)}
+                selected={isAdminNavActive(pathname, item.href)}
+              >
+                <ListItemIcon>
+                  <ShieldRoundedIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary={item.label} secondary={item.description} />
+              </ListItemButton>
+            ))}
+          </List>
+        </Box>
+      ) : null}
       <Box sx={{ mt: 'auto', borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
         <Typography variant="subtitle2">{isAuthenticated ? resolvedViewer.displayName : 'Guest visitor'}</Typography>
         <Typography variant="body2" color="text.secondary">
