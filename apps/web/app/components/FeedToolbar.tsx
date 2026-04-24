@@ -4,7 +4,6 @@ import { useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
-import KeyboardDoubleArrowUpRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowUpRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { Button, Chip, Stack } from '@mui/material';
 
@@ -71,13 +70,6 @@ export function FeedToolbar({
         <Stack direction="row" spacing={1}>
           <Button startIcon={<RefreshRoundedIcon />} variant="contained" onClick={() => onRefresh?.() || router.refresh()}>
             Refresh
-          </Button>
-          <Button
-            startIcon={<KeyboardDoubleArrowUpRoundedIcon />}
-            variant="outlined"
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          >
-            To top
           </Button>
         </Stack>
       </Stack>

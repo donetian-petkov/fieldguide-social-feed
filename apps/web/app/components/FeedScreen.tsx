@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import KeyboardDoubleArrowDownRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowDownRounded';
 import KeyboardDoubleArrowUpRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowUpRounded';
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
@@ -18,6 +18,15 @@ import { AppShell } from './AppShell';
 import { ArticleCard } from './ArticleCard';
 import { ContentImage } from './ContentImage';
 import { FeedToolbar } from './FeedToolbar';
+
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function scrollToBottom() {
+  const pageHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+  window.scrollTo({ top: pageHeight, behavior: 'smooth' });
+}
 
 export function FeedScreen({
   feed,
@@ -36,7 +45,6 @@ export function FeedScreen({
   pinnedItems: ContentItem[];
   savedIds: string[];
 }) {
-  const router = useRouter();
   const [hiddenIds, setHiddenIds] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const session = useSessionViewer(viewer);
@@ -79,9 +87,12 @@ export function FeedScreen({
             gridTemplateColumns: effectivePinnedItems.length
               ? {
                   xs: '1fr',
-                  lg: 'minmax(250px, 300px) minmax(0, 1fr)'
+                  lg: 'minmax(250px, 300px) minmax(0, 1fr) minmax(132px, 148px)'
                 }
-              : '1fr'
+              : {
+                  xs: '1fr',
+                  lg: 'minmax(0, 1fr) minmax(132px, 148px)'
+                }
           }}
         >
           {effectivePinnedItems.length ? (
@@ -251,6 +262,36 @@ export function FeedScreen({
               </Card>
             ) : null}
           </Stack>
+
+          <Card
+            sx={{
+              display: {
+                xs: 'none',
+                lg: 'block'
+              },
+              position: 'sticky',
+              top: 96,
+              border: '1px solid',
+              borderColor: 'divider'
+            }}
+          >
+            <CardContent>
+              <Stack spacing={1.25}>
+                <Typography variant="overline" color="text.secondary">
+                  Page controls
+                </Typography>
+                <Button startIcon={<RefreshRoundedIcon />} variant="contained" onClick={() => paginatedFeed.refresh()}>
+                  Refresh
+                </Button>
+                <Button startIcon={<KeyboardDoubleArrowUpRoundedIcon />} variant="outlined" onClick={scrollToTop}>
+                  To top
+                </Button>
+                <Button startIcon={<KeyboardDoubleArrowDownRoundedIcon />} variant="outlined" onClick={scrollToBottom}>
+                  To bottom
+                </Button>
+              </Stack>
+            </CardContent>
+          </Card>
         </Box>
       </Stack>
 
@@ -280,9 +321,17 @@ export function FeedScreen({
           size="small"
           color="secondary"
           aria-label="Scroll to top"
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          onClick={scrollToTop}
         >
           <KeyboardDoubleArrowUpRoundedIcon />
+        </Fab>
+        <Fab
+          size="small"
+          color="secondary"
+          aria-label="Scroll to bottom"
+          onClick={scrollToBottom}
+        >
+          <KeyboardDoubleArrowDownRoundedIcon />
         </Fab>
       </Box>
 
