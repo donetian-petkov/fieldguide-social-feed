@@ -35,6 +35,30 @@ Fieldguide is a full-stack educational social feed for history, art, books, movi
 
 ## Quick Start: Database Mode
 
+One-command bootstrap for a new machine:
+
+```bash
+npm run setup:new-device
+```
+
+This script:
+- creates `.env` from `.env.example` if needed
+- asks for setup mode, admin seed password, optional AI provider keys/models, and optional email settings
+- generates a local `COOKIE_SECRET`
+- generates `SEED_USER_PASSWORD` if you leave the prompt blank
+- installs npm dependencies
+- starts MySQL and Redis
+- runs Prisma generate, migrate, and seed
+
+Useful variants:
+
+```bash
+npm run setup:new-device:demo
+npm run setup:new-device -- --playwright
+npm run setup:new-device -- --seed-password your-local-admin-password
+npm run setup:new-device -- --build --start
+```
+
 Database mode is the default run path. It starts MySQL and Redis, boots the approved source registry, and the worker queues immediate ingestion for active RSS, YouTube RSS, and approved adapter-backed sources.
 
 ```bash
