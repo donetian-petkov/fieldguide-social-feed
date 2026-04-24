@@ -6,7 +6,7 @@ import { Alert, Button, Card, CardContent, Stack, TextField, Typography } from '
 import type { ContentItem, InterfaceLanguage } from '@edu-feed/shared';
 import { resolveTranslation } from '@edu-feed/shared';
 
-import { useAskAiMutation, useHealthQuery } from '../lib/api';
+import { useAskAiMutation, useRuntimeHealthQuery } from '../lib/api';
 import { useSessionViewer } from '../lib/session';
 
 export function AskAiCard({ item, language }: { item: ContentItem; language: InterfaceLanguage }) {
@@ -14,7 +14,7 @@ export function AskAiCard({ item, language }: { item: ContentItem; language: Int
   const [answer, setAnswer] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [askAi, askAiState] = useAskAiMutation();
-  const healthQuery = useHealthQuery();
+  const healthQuery = useRuntimeHealthQuery();
   const { isAuthenticated, viewer } = useSessionViewer();
   const translation = resolveTranslation(item, language);
   const aiAvailable = Boolean(healthQuery.data?.aiAvailable);

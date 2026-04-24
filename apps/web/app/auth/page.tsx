@@ -5,11 +5,11 @@ import { Box, Typography } from '@mui/material';
 import { AppShell } from '../components/AppShell';
 import { AuthPanel } from '../components/AuthPanel';
 import { SectionCard } from '../components/SectionCard';
-import { useHealthQuery } from '../lib/api';
+import { useRuntimeHealthQuery } from '../lib/api';
 import { guestViewer } from '../lib/demo';
 
 export default function AuthPage() {
-  const healthQuery = useHealthQuery();
+  const healthQuery = useRuntimeHealthQuery();
   const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
 
   return (

@@ -11,7 +11,7 @@ import { AppShell } from '../components/AppShell';
 import { ProtectedModeCard } from '../components/ProtectedModeCard';
 import { SectionCard } from '../components/SectionCard';
 import { guestViewer } from '../lib/demo';
-import { useAlbumsQuery, useCreateAlbumMutation, useDeleteAlbumMutation, useHealthQuery, useUpdateSettingsMutation } from '../lib/api';
+import { useAlbumsQuery, useCreateAlbumMutation, useDeleteAlbumMutation, useRuntimeHealthQuery, useUpdateSettingsMutation } from '../lib/api';
 import { useSessionViewer } from '../lib/session';
 
 function getMutationErrorMessage(error: unknown, fallback: string) {
@@ -45,7 +45,7 @@ function SignInRequiredNotice({ text }: { text: string }) {
 export default function SettingsPage() {
   const { viewer, isAuthenticated } = useSessionViewer(guestViewer);
   const albumsQuery = useAlbumsQuery(undefined, { skip: !isAuthenticated });
-  const healthQuery = useHealthQuery();
+  const healthQuery = useRuntimeHealthQuery();
   const [updateSettings] = useUpdateSettingsMutation();
   const [createAlbum, createAlbumState] = useCreateAlbumMutation();
   const [deleteAlbum, deleteAlbumState] = useDeleteAlbumMutation();

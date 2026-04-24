@@ -34,7 +34,7 @@ import {
 import type { ContentItem, ContentLanguageMode, InterfaceLanguage } from '@edu-feed/shared';
 import { resolveTranslation } from '@edu-feed/shared';
 
-import { useHealthQuery, useHideItemMutation, useSaveItemMutation, useShareItemMutation, useUnsaveItemMutation } from '../lib/api';
+import { useHideItemMutation, useRuntimeHealthQuery, useSaveItemMutation, useShareItemMutation, useUnsaveItemMutation } from '../lib/api';
 import { useSessionViewer } from '../lib/session';
 import { AskAiCard } from './AskAiCard';
 import { ContentImage } from './ContentImage';
@@ -67,7 +67,7 @@ export function ArticleCard({
   const [savedState, setSavedState] = useState(isSaved);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const { isAuthenticated, viewer } = useSessionViewer();
-  const healthQuery = useHealthQuery();
+  const healthQuery = useRuntimeHealthQuery();
   const [saveItem, saveItemState] = useSaveItemMutation();
   const [unsaveItem, unsaveItemState] = useUnsaveItemMutation();
   const [hideItem] = useHideItemMutation();

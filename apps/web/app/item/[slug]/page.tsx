@@ -17,7 +17,7 @@ import {
   useAddAlbumItemMutation,
   useAlbumsQuery,
   useCreateCommentMutation,
-  useHealthQuery,
+  useRuntimeHealthQuery,
   useItemQuery,
   useSaveItemMutation,
   useUnsaveItemMutation,
@@ -31,7 +31,7 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
   const fallback = DEMO_FALLBACK_ENABLED ? getItemModel(params.slug) : null;
   const { viewer, isAuthenticated, savedIds } = useSessionViewer();
   const itemQuery = useItemQuery(params.slug);
-  const healthQuery = useHealthQuery();
+  const healthQuery = useRuntimeHealthQuery();
   const albumsQuery = useAlbumsQuery(undefined, {
     skip: !isAuthenticated
   });

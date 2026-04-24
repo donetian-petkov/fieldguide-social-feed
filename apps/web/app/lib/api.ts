@@ -86,10 +86,12 @@ export const fieldguideApi = createApi({
     baseUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000',
     credentials: 'include'
   }),
-  tagTypes: ['Me', 'Feed', 'Item', 'Albums', 'Admin', 'Profile'],
+  tagTypes: ['Health', 'Me', 'Feed', 'Item', 'Albums', 'Admin', 'Profile'],
   endpoints: (builder) => ({
     health: builder.query<HealthResponse, void>({
-      query: () => '/health'
+      query: () => '/health',
+      providesTags: ['Health'],
+      keepUnusedDataFor: 0
     }),
     me: builder.query<MeResponse, void>({
       query: () => '/v1/me',
@@ -189,7 +191,7 @@ export const fieldguideApi = createApi({
         method: 'PUT',
         body
       }),
-      invalidatesTags: ['Admin']
+      invalidatesTags: ['Admin', 'Health']
     }),
     generatedStories: builder.query<{ drafts: GeneratedStoryDraftDto[] }, void>({
       query: () => '/v1/admin/generated-stories',
@@ -443,3 +445,12 @@ export const {
   useUpdateSettingsMutation,
   useUnsaveItemMutation
 } = fieldguideApi;
+
+export function useRuntimeHealthQuery() {
+  return useHealthQuery(undefined, {
+    pollingInterval: 5000,
+    refetchOnMountOrArgChange: true,
+    refetchOnFocus: true,
+    refetchOnReconnect: true
+  });
+}

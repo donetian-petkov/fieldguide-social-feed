@@ -23,7 +23,7 @@ import { SectionCard } from '../../components/SectionCard';
 import { DEMO_FALLBACK_ENABLED, getAdminModel, getEmptyAdminModel } from '../../lib/demo';
 import {
   useAdminDashboardQuery,
-  useHealthQuery,
+  useRuntimeHealthQuery,
   useRequestGeneratedStoryMutation,
   useReviewGeneratedStoryMutation,
   useUpdateAiConfigMutation
@@ -53,7 +53,7 @@ export default function AdminAiPage() {
   const fallback = DEMO_FALLBACK_ENABLED ? getAdminModel() : getEmptyAdminModel();
   const { viewer } = useSessionViewer();
   const adminQuery = useAdminDashboardQuery();
-  const healthQuery = useHealthQuery();
+  const healthQuery = useRuntimeHealthQuery();
   const [updateAiConfig, updateState] = useUpdateAiConfigMutation();
   const [requestGeneratedStory, requestState] = useRequestGeneratedStoryMutation();
   const [reviewGeneratedStory, reviewState] = useReviewGeneratedStoryMutation();

@@ -31,7 +31,7 @@ import {
 
 import type { SubjectFeed, UserSettingsDto } from '@edu-feed/shared';
 
-import { useHealthQuery, useLogoutMutation } from '../lib/api';
+import { useLogoutMutation, useRuntimeHealthQuery } from '../lib/api';
 import { ADMIN_NAV_ITEMS, isAdminNavActive } from '../lib/admin-nav';
 import { FEED_ORDER, normalizeFeedSegment } from '../lib/demo';
 import { useSessionViewer } from '../lib/session';
@@ -67,7 +67,7 @@ export function AppShell({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const { viewer: resolvedViewer, isAuthenticated } = useSessionViewer(viewer);
-  const healthQuery = useHealthQuery();
+  const healthQuery = useRuntimeHealthQuery();
   const [logout, logoutState] = useLogoutMutation();
   const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
 
