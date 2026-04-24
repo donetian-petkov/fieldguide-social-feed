@@ -215,7 +215,16 @@ export const feedQuerySchema = z.object({
   contentMode: contentModeSchema.default('standard'),
   includePinned: z.boolean().default(true),
   includeHidden: z.boolean().default(false),
-  search: z.string().trim().optional()
+  search: z.string().trim().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(50).default(20)
+});
+
+export const feedPageInfoSchema = z.object({
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive(),
+  totalItems: z.number().int().nonnegative(),
+  hasMore: z.boolean()
 });
 
 export const modeSwitchRequestSchema = z.object({
@@ -332,6 +341,7 @@ export type CommentDto = z.infer<typeof commentDtoSchema>;
 export type AlbumDto = z.infer<typeof albumDtoSchema>;
 export type UserSettingsDto = z.infer<typeof userSettingsDtoSchema>;
 export type FeedQuery = z.infer<typeof feedQuerySchema>;
+export type FeedPageInfo = z.infer<typeof feedPageInfoSchema>;
 export type ModeSwitchRequest = z.infer<typeof modeSwitchRequestSchema>;
 export type ModeSwitchResult = z.infer<typeof modeSwitchResultSchema>;
 export type AiModelConfig = z.infer<typeof aiModelConfigSchema>;
@@ -354,6 +364,8 @@ export const SUBJECT_FEED_LABELS: Record<SubjectFeed, { en: string; bg: string }
   saved: { en: 'Saved', bg: 'Запазени' },
   community: { en: 'Community', bg: 'Общност' }
 };
+
+export const DEFAULT_FEED_PAGE_SIZE = 20;
 
 export const CONTENT_MODE_LABELS: Record<ContentMode, { en: string; bg: string }> = {
   kid: { en: 'Kid', bg: 'Детски' },

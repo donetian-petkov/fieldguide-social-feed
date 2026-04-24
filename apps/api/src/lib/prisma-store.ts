@@ -742,14 +742,23 @@ export class PrismaStore implements AppStore {
     })).map((entry) => entry.itemId);
 
     const pinnedItems = items.filter((item) => pinnedIds.includes(item.id) || (item.pinned && query.feed !== 'saved'));
+    const totalItems = items.length;
+    const startIndex = (query.page - 1) * query.pageSize;
+    const paginatedItems = items.slice(startIndex, startIndex + query.pageSize);
 
     return {
-      items,
+      items: paginatedItems,
       pinnedItems,
       savedIds,
       hiddenIds,
       mode,
-      feed: query.feed
+      feed: query.feed,
+      pagination: {
+        page: query.page,
+        pageSize: query.pageSize,
+        totalItems,
+        hasMore: startIndex + query.pageSize < totalItems
+      }
     };
   }
 

@@ -10,6 +10,7 @@ import type {
   ContentItem,
   ContentMode,
   ErrorLogDto,
+  FeedPageInfo,
   SourceDefinition,
   GeneratedStoryDraftDto,
   SubmissionDto,
@@ -29,6 +30,7 @@ type FeedResponse = {
   hiddenIds: string[];
   mode: ContentMode;
   feed: SubjectFeed;
+  pagination: FeedPageInfo;
 };
 
 type ItemResponse = {
@@ -92,8 +94,8 @@ export const fieldguideApi = createApi({
       query: () => '/v1/me',
       providesTags: ['Me', 'Albums']
     }),
-    feed: builder.query<FeedResponse, { feed: SubjectFeed }>({
-      query: ({ feed }) => `/v1/feed?feed=${feed}`,
+    feed: builder.query<FeedResponse, { feed: SubjectFeed; page?: number; pageSize?: number }>({
+      query: ({ feed, page = 1, pageSize = 20 }) => `/v1/feed?feed=${feed}&page=${page}&pageSize=${pageSize}`,
       providesTags: (_result, _error, args) => ['Feed', { type: 'Feed', id: args.feed }]
     }),
     item: builder.query<ItemResponse, string>({

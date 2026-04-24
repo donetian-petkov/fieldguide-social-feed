@@ -7,6 +7,7 @@ import type {
   ContentMode,
   ErrorLogDto,
   FeedQuery,
+  FeedPageInfo,
   GeneratedStoryDraftDto,
   InterfaceLanguage,
   ModeSwitchResult,
@@ -31,6 +32,7 @@ export type FeedResponse = {
   hiddenIds: string[];
   mode: ContentMode;
   feed: SubjectFeed;
+  pagination: FeedPageInfo;
 };
 
 export type AdminSnapshot = {

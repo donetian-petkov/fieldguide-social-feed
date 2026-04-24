@@ -8,7 +8,8 @@ import { ArticleCard } from '../components/ArticleCard';
 import { FeedToolbar } from '../components/FeedToolbar';
 import { SectionCard } from '../components/SectionCard';
 import { DEMO_FALLBACK_ENABLED, getCommentsCountByItem, getFeedModel } from '../lib/demo';
-import { useCreateSubmissionMutation, useFeedQuery } from '../lib/api';
+import { useCreateSubmissionMutation } from '../lib/api';
+import { usePaginatedFeed } from '../lib/usePaginatedFeed';
 import { useSessionViewer } from '../lib/session';
 
 type SubmissionType = 'link' | 'community_post';
@@ -16,14 +17,18 @@ type SubmissionType = 'link' | 'community_post';
 export default function CommunityPage() {
   const fallback = getFeedModel('community');
   const { viewer, isAuthenticated } = useSessionViewer();
-  const feedQuery = useFeedQuery({ feed: 'community' });
   const [createSubmission, createSubmissionState] = useCreateSubmissionMutation();
   const [submissionType, setSubmissionType] = useState<SubmissionType>('link');
   const [title, setTitle] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
   const [body, setBody] = useState('');
   const [message, setMessage] = useState<string | null>(null);
-  const items = feedQuery.data?.items || (DEMO_FALLBACK_ENABLED ? fallback.items : []);
+  const paginatedFeed = usePaginatedFeed({
+    feed: 'community',
+    fallbackItems: DEMO_FALLBACK_ENABLED ? fallback.items : [],
+    fallbackPinnedItems: []
+  });
+  const items = paginatedFeed.items;
 
   return (
     <AppShell
@@ -121,9 +126,22 @@ export default function CommunityPage() {
               showImage={viewer.imageMode === 'on'}
             />
           ))}
+
+          {paginatedFeed.pagination.hasMore ? (
+            <Button
+              variant="outlined"
+              sx={{ alignSelf: 'center', minWidth: 220 }}
+              onClick={() => paginatedFeed.loadMore()}
+              disabled={paginatedFeed.isFetching}
+            >
+              {paginatedFeed.isFetching
+                ? 'Loading more...'
+                : `Load more (${items.length} of ${paginatedFeed.pagination.totalItems})`}
+            </Button>
+          ) : null}
         </Stack>
 
-        {feedQuery.isError ? (
+        {paginatedFeed.isError ? (
           <Box>
             <Alert severity="warning">Community feed data could not be loaded from the API.</Alert>
           </Box>

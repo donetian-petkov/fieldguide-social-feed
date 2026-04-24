@@ -9,6 +9,7 @@ import type {
   ContentMode,
   ErrorLogDto,
   FeedQuery,
+  FeedPageInfo,
   GeneratedStoryDraftDto,
   InterfaceLanguage,
   ModeSwitchResult,
@@ -61,6 +62,7 @@ type FeedResponse = {
   hiddenIds: string[];
   mode: ContentMode;
   feed: SubjectFeed;
+  pagination: FeedPageInfo;
 };
 
 type AdminSnapshot = {
@@ -340,14 +342,23 @@ export class DemoStore {
 
     const pinnedIds = this.pinnedSlots.filter((entry) => entry.feed === query.feed).map((entry) => entry.itemId);
     const pinnedItems = items.filter((item) => pinnedIds.includes(item.id) || (item.pinned && query.feed !== 'saved'));
+    const totalItems = items.length;
+    const startIndex = (query.page - 1) * query.pageSize;
+    const paginatedItems = items.slice(startIndex, startIndex + query.pageSize);
 
     return {
-      items,
+      items: paginatedItems,
       pinnedItems,
       savedIds,
       hiddenIds,
       mode,
-      feed: query.feed
+      feed: query.feed,
+      pagination: {
+        page: query.page,
+        pageSize: query.pageSize,
+        totalItems,
+        hasMore: startIndex + query.pageSize < totalItems
+      }
     };
   }
 

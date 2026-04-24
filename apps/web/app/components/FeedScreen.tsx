@@ -11,8 +11,8 @@ import { Alert, Box, Button, Card, CardContent, Fab, Snackbar, Stack, Typography
 import type { ContentItem, SubjectFeed, UserSettingsDto } from '@edu-feed/shared';
 import { resolveTranslation } from '@edu-feed/shared';
 
-import { useFeedQuery } from '../lib/api';
 import { getCommentsCountByItem } from '../lib/demo';
+import { usePaginatedFeed } from '../lib/usePaginatedFeed';
 import { useSessionViewer } from '../lib/session';
 import { AppShell } from './AppShell';
 import { ArticleCard } from './ArticleCard';
@@ -39,15 +39,20 @@ export function FeedScreen({
   const [toast, setToast] = useState<string | null>(null);
   const session = useSessionViewer(viewer);
   const isSavedGuestView = feed === 'saved' && !session.isAuthenticated;
-  const feedQuery = useFeedQuery({ feed }, { skip: isSavedGuestView });
   const resolvedViewer = session.viewer;
   const resolvedLanguage = resolvedViewer.language as 'en' | 'bg';
   const resolvedLanguageMode = resolvedViewer.contentLanguageMode;
   const resolvedImageMode = resolvedViewer.imageMode;
   const fallbackItems = isSavedGuestView ? [] : items;
   const fallbackPinnedItems = isSavedGuestView ? [] : pinnedItems;
-  const effectiveItems = feedQuery.data?.items || fallbackItems;
-  const effectivePinnedItems = feedQuery.data?.pinnedItems || fallbackPinnedItems;
+  const paginatedFeed = usePaginatedFeed({
+    feed,
+    fallbackItems,
+    fallbackPinnedItems,
+    skip: isSavedGuestView
+  });
+  const effectiveItems = paginatedFeed.items;
+  const effectivePinnedItems = paginatedFeed.pinnedItems;
   const visibleItems = effectiveItems.filter((item) => !hiddenIds.includes(item.id));
 
   return (
@@ -197,7 +202,7 @@ export function FeedScreen({
                   </Stack>
                 </CardContent>
               </Card>
-            ) : !visibleItems.length ? (
+            ) : !visibleItems.length && !paginatedFeed.pagination.hasMore ? (
               <Card variant="outlined">
                 <CardContent>
                   <Typography variant="h6">No items remain in this view</Typography>
@@ -208,7 +213,20 @@ export function FeedScreen({
               </Card>
             ) : null}
 
-            {feedQuery.isError ? (
+            {paginatedFeed.pagination.hasMore ? (
+              <Button
+                variant="outlined"
+                sx={{ alignSelf: 'center', minWidth: 220 }}
+                onClick={() => paginatedFeed.loadMore()}
+                disabled={paginatedFeed.isFetching}
+              >
+                {paginatedFeed.isFetching
+                  ? 'Loading more...'
+                  : `Load more (${effectiveItems.length} of ${paginatedFeed.pagination.totalItems})`}
+              </Button>
+            ) : null}
+
+            {paginatedFeed.isError ? (
               <Card variant="outlined">
                 <CardContent>
                   <Typography variant="body2" color="text.secondary">

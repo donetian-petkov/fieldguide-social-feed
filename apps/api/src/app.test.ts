@@ -156,6 +156,34 @@ test('item detail records a view for the signed-in user', async () => {
   }
 });
 
+test('feed pagination returns a stable page slice and metadata', async () => {
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    const firstPage = await app.inject({
+      method: 'GET',
+      url: '/v1/feed?feed=history&page=1&pageSize=1'
+    });
+    const secondPage = await app.inject({
+      method: 'GET',
+      url: '/v1/feed?feed=history&page=2&pageSize=1'
+    });
+
+    assert.equal(firstPage.statusCode, 200);
+    assert.equal(secondPage.statusCode, 200);
+    assert.equal(firstPage.json().items.length, 1);
+    assert.equal(secondPage.json().items.length, 1);
+    assert.equal(firstPage.json().pagination.page, 1);
+    assert.equal(firstPage.json().pagination.pageSize, 1);
+    assert.equal(typeof firstPage.json().pagination.totalItems, 'number');
+    assert.equal(typeof firstPage.json().pagination.hasMore, 'boolean');
+    assert.notEqual(firstPage.json().items[0].id, secondPage.json().items[0].id);
+  } finally {
+    await app.close();
+  }
+});
+
 test('settings updates sync the newsletter schedule when cadence changes', async () => {
   const { store, queues } = createHarness();
   const app = await buildApp({ config: testConfig, store, queues });
@@ -333,7 +361,7 @@ test('admin generated story drafts require admin access and approval before publ
 
     const afterFeedResponse = await app.inject({
       method: 'GET',
-      url: '/v1/feed?feed=history'
+      url: '/v1/feed?feed=history&pageSize=50'
     });
     assert.equal(afterFeedResponse.statusCode, 200);
     assert.equal(
@@ -513,7 +541,7 @@ test('approved community submissions appear in the community feed and author pro
 
     const communityFeedResponse = await app.inject({
       method: 'GET',
-      url: '/v1/feed?feed=community'
+      url: '/v1/feed?feed=community&pageSize=50'
     });
 
     assert.equal(communityFeedResponse.statusCode, 200);
