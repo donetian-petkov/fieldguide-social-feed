@@ -1,4 +1,5 @@
 import type {
+  AdminAiUsageSummary,
   AiModelConfig,
   AiUsageSnapshot,
   AlbumDto,
@@ -108,6 +109,7 @@ export interface AppStore {
   askAi(itemId: string, question: string, language: InterfaceLanguage, username?: string | null): StoreResult<AskAiResult>;
   shareItem(itemId: string): StoreResult<ShareResult>;
   getAdminSnapshot(): StoreResult<AdminSnapshot>;
+  getAdminAiUsageSummary(): StoreResult<AdminAiUsageSummary>;
   listGeneratedStoryDrafts(): StoreResult<GeneratedStoryDraftDto[]>;
   requestGeneratedStory(username: string, input: GeneratedStoryRequestInput): StoreResult<GeneratedStoryDraftDto>;
   reviewGeneratedStory(

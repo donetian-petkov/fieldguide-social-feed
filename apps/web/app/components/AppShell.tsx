@@ -31,7 +31,7 @@ import {
 
 import type { SubjectFeed, UserSettingsDto } from '@edu-feed/shared';
 
-import { useLogoutMutation, useRuntimeHealthQuery } from '../lib/api';
+import { useAdminUsageSummaryQuery, useLogoutMutation, useRuntimeHealthQuery } from '../lib/api';
 import { ADMIN_NAV_ITEMS, isAdminNavActive } from '../lib/admin-nav';
 import { FEED_ORDER, normalizeFeedSegment } from '../lib/demo';
 import { useSessionViewer } from '../lib/session';
@@ -55,6 +55,20 @@ function currentFeedFromPathname(pathname: string): SubjectFeed {
   return 'history';
 }
 
+function formatCompactNumber(value: number) {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
+  }
+  if (value >= 1_000) {
+    return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}k`;
+  }
+  return String(value);
+}
+
+function formatUsageCost(value: number) {
+  return `$${value.toFixed(value >= 10 ? 0 : 2)}`;
+}
+
 export function AppShell({
   title,
   subtitle,
@@ -70,6 +84,15 @@ export function AppShell({
   const healthQuery = useRuntimeHealthQuery();
   const [logout, logoutState] = useLogoutMutation();
   const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
+  const isAdminViewer = isAuthenticated && resolvedViewer.role === 'admin';
+  const adminUsageSummaryQuery = useAdminUsageSummaryQuery(undefined, {
+    skip: !isAdminViewer,
+    pollingInterval: 15000,
+    refetchOnMountOrArgChange: true,
+    refetchOnFocus: true,
+    refetchOnReconnect: true
+  });
+  const adminUsageSummary = adminUsageSummaryQuery.data?.summary;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -257,6 +280,34 @@ export function AppShell({
               {subtitle}
             </Typography>
           </Stack>
+          {isAdminViewer ? (
+            <Box
+              sx={{
+                display: {
+                  xs: 'none',
+                  md: 'block'
+                },
+                px: 1.5,
+                py: 0.75,
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 999,
+                minWidth: 220,
+                backgroundColor: 'background.paper'
+              }}
+            >
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.15 }}>
+                Tokens this month
+              </Typography>
+              <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
+                {adminUsageSummary
+                  ? `${formatCompactNumber(adminUsageSummary.inputTokens)} in • ${formatCompactNumber(adminUsageSummary.outputTokens)} out • ${formatUsageCost(adminUsageSummary.totalCostUsd)}`
+                  : adminUsageSummaryQuery.isError
+                    ? 'Usage unavailable'
+                    : 'Loading...'}
+              </Typography>
+            </Box>
+          ) : null}
           <Button variant="outlined" onClick={() => setHelpOpen(true)}>
             Help
           </Button>

@@ -3,6 +3,7 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 
 import type {
+  AdminAiUsageSummary,
   AiModelConfig,
   AiUsageSnapshot,
   AlbumDto,
@@ -59,6 +60,10 @@ type AdminDashboardResponse = {
   aiConfig: AiModelConfig;
   aiUsage: AiUsageSnapshot[];
   generatedStories: GeneratedStoryDraftDto[];
+};
+
+type AdminUsageSummaryResponse = {
+  summary: AdminAiUsageSummary;
 };
 
 type AuthBody = {
@@ -153,6 +158,10 @@ export const fieldguideApi = createApi({
     }),
     adminDashboard: builder.query<AdminDashboardResponse, void>({
       query: () => '/v1/admin/dashboard',
+      providesTags: ['Admin']
+    }),
+    adminUsageSummary: builder.query<AdminUsageSummaryResponse, void>({
+      query: () => '/v1/admin/usage-summary',
       providesTags: ['Admin']
     }),
     addSource: builder.mutation<{ source: SourceDefinition }, Omit<SourceDefinition, 'id'>>({
@@ -402,6 +411,7 @@ export const fieldguideApi = createApi({
 
 export const {
   useAdminDashboardQuery,
+  useAdminUsageSummaryQuery,
   useAddAlbumItemMutation,
   useAlbumQuery,
   useAlbumsQuery,

@@ -268,7 +268,28 @@ test('admin routes reject non-admin users and schedule new sources for ingestion
 
     assert.equal(forbidden.statusCode, 403);
 
+    const usageForbidden = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/usage-summary',
+      headers: {
+        cookie: userCookie
+      }
+    });
+
+    assert.equal(usageForbidden.statusCode, 403);
+
     const adminCookie = await login(app, 'admin', 'fieldguide123');
+    const usageResponse = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/usage-summary',
+      headers: {
+        cookie: adminCookie
+      }
+    });
+
+    assert.equal(usageResponse.statusCode, 200);
+    assert.deepEqual(usageResponse.json().summary, store.getAdminAiUsageSummary());
+
     const response = await app.inject({
       method: 'POST',
       url: '/v1/admin/sources',

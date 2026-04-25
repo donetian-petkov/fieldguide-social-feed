@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type {
+  AdminAiUsageSummary,
   AiModelConfig,
   AiUsageSnapshot,
   AlbumDto,
@@ -588,6 +589,19 @@ export class DemoStore {
       aiConfig: this.aiConfig,
       aiUsage: this.aiUsage,
       generatedStories: this.generatedStories
+    };
+  }
+
+  getAdminAiUsageSummary(): AdminAiUsageSummary {
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const monthlyUsage = this.aiUsage.filter((entry) => new Date(entry.createdAt) >= monthStart);
+    return {
+      window: 'monthly',
+      startsAt: monthStart.toISOString(),
+      inputTokens: monthlyUsage.reduce((sum, entry) => sum + entry.inputTokens, 0),
+      outputTokens: monthlyUsage.reduce((sum, entry) => sum + entry.outputTokens, 0),
+      totalCostUsd: Number(monthlyUsage.reduce((sum, entry) => sum + entry.totalCostUsd, 0).toFixed(4))
     };
   }
 

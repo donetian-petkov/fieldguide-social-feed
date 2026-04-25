@@ -260,6 +260,14 @@ export const aiUsageSnapshotSchema = z.object({
   createdAt: z.string()
 });
 
+export const adminAiUsageSummarySchema = z.object({
+  window: z.enum(['monthly']),
+  startsAt: z.string(),
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  totalCostUsd: z.number().nonnegative()
+});
+
 export const submissionDtoSchema = z.object({
   id: z.string(),
   type: z.enum(['link', 'community_post']),
@@ -346,6 +354,7 @@ export type ModeSwitchRequest = z.infer<typeof modeSwitchRequestSchema>;
 export type ModeSwitchResult = z.infer<typeof modeSwitchResultSchema>;
 export type AiModelConfig = z.infer<typeof aiModelConfigSchema>;
 export type AiUsageSnapshot = z.infer<typeof aiUsageSnapshotSchema>;
+export type AdminAiUsageSummary = z.infer<typeof adminAiUsageSummarySchema>;
 export type SubmissionDto = z.infer<typeof submissionDtoSchema>;
 export type GeneratedStoryCitation = z.infer<typeof generatedStoryCitationSchema>;
 export type GeneratedStoryVerification = z.infer<typeof generatedStoryVerificationSchema>;

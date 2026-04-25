@@ -62,6 +62,12 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
     return options.store.getAdminSnapshot();
   });
 
+  app.get('/v1/admin/usage-summary', async () => {
+    return {
+      summary: await options.store.getAdminAiUsageSummary()
+    };
+  });
+
   app.get('/v1/admin/sources', async () => {
     return {
       sources: await options.store.listSources()

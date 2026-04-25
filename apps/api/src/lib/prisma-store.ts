@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import argon2 from 'argon2';
 import { PrismaClient, type Prisma } from '@prisma/client';
 import type {
+  AdminAiUsageSummary,
   AiModelConfig,
   AiUsageSnapshot,
   AlbumDto,
@@ -1526,6 +1527,31 @@ export class PrismaStore implements AppStore {
       aiConfig: aiConfig ? aiConfigToDto(aiConfig) : DEMO_AI_CONFIG,
       aiUsage: aiUsage.map(aiUsageToDto),
       generatedStories: generatedStories.map(buildGeneratedStoryDraftDto)
+    };
+  }
+
+  async getAdminAiUsageSummary(): Promise<AdminAiUsageSummary> {
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const aggregate = await this.prisma.aiUsageLedger.aggregate({
+      _sum: {
+        inputTokens: true,
+        outputTokens: true,
+        totalCostUsd: true
+      },
+      where: {
+        createdAt: {
+          gte: monthStart
+        }
+      }
+    });
+
+    return {
+      window: 'monthly',
+      startsAt: monthStart.toISOString(),
+      inputTokens: aggregate._sum.inputTokens || 0,
+      outputTokens: aggregate._sum.outputTokens || 0,
+      totalCostUsd: Number(aggregate._sum.totalCostUsd || 0)
     };
   }
 
