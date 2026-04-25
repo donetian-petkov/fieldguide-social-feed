@@ -87,11 +87,11 @@ export function FeedScreen({
             gridTemplateColumns: effectivePinnedItems.length
               ? {
                   xs: '1fr',
-                  lg: 'minmax(250px, 300px) minmax(0, 1fr) minmax(132px, 148px)'
+                  lg: 'minmax(250px, 300px) minmax(0, 1fr) minmax(152px, 168px)'
                 }
               : {
                   xs: '1fr',
-                  lg: 'minmax(0, 1fr) minmax(132px, 148px)'
+                  lg: 'minmax(0, 1fr) minmax(152px, 168px)'
                 }
           }}
         >
@@ -280,14 +280,32 @@ export function FeedScreen({
                 <Typography variant="overline" color="text.secondary">
                   Page controls
                 </Typography>
-                <Button startIcon={<RefreshRoundedIcon />} variant="contained" onClick={() => paginatedFeed.refresh()}>
+                <Button
+                  fullWidth
+                  startIcon={<RefreshRoundedIcon />}
+                  variant="contained"
+                  onClick={() => paginatedFeed.refresh()}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
                   Refresh
                 </Button>
-                <Button startIcon={<KeyboardDoubleArrowUpRoundedIcon />} variant="outlined" onClick={scrollToTop}>
-                  To top
+                <Button
+                  fullWidth
+                  startIcon={<KeyboardDoubleArrowUpRoundedIcon />}
+                  variant="outlined"
+                  onClick={scrollToTop}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  Top
                 </Button>
-                <Button startIcon={<KeyboardDoubleArrowDownRoundedIcon />} variant="outlined" onClick={scrollToBottom}>
-                  To bottom
+                <Button
+                  fullWidth
+                  startIcon={<KeyboardDoubleArrowDownRoundedIcon />}
+                  variant="outlined"
+                  onClick={scrollToBottom}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  Bottom
                 </Button>
               </Stack>
             </CardContent>
