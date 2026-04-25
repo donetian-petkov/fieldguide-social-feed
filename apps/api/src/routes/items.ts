@@ -50,9 +50,14 @@ export async function registerItemRoutes(app: FastifyInstance, options: { store:
         app.log.warn({ error, itemId: item.id, username: request.currentUser?.username }, 'Failed to record item view');
       });
     }
+    const [comments, relatedItems] = await Promise.all([
+      options.store.listComments(item.id),
+      options.store.getRelatedItems(item.id, request.currentUser?.username)
+    ]);
     return {
       item,
-      comments: await options.store.listComments(item.id)
+      comments,
+      relatedItems
     };
   });
 

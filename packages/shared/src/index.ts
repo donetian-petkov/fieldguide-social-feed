@@ -254,7 +254,7 @@ export const aiModelConfigSchema = z.object({
 export const aiUsageSnapshotSchema = z.object({
   provider: aiProviderSchema,
   model: z.string(),
-  purpose: z.enum(['summary', 'translation', 'classification', 'ask', 'newsletter', 'generated_story', 'generated_story_verification']),
+  purpose: z.enum(['summary', 'translation', 'classification', 'ask', 'newsletter', 'generated_story', 'generated_story_verification', 'related']),
   inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
   totalCostUsd: z.number().nonnegative(),

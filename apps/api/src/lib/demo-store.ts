@@ -37,6 +37,8 @@ import {
   resolveTranslation
 } from '@edu-feed/shared';
 
+import { rankRelatedItems } from './related-items.js';
+
 type DemoSession = {
   username: string;
   expiresAt: number;
@@ -435,6 +437,34 @@ export class DemoStore {
     const allowed = filterItemsForFeed([item], 'saved', mode).length > 0;
     if (!allowed) return null;
     return item;
+  }
+
+  getRelatedItems(idOrSlug: string, username?: string | null) {
+    const viewer = username ? this.requireUser(username) : null;
+    const mode = viewer?.contentMode || 'standard';
+    const hiddenIds = [...(this.hiddenByUser.get(username || '') || new Set<string>())];
+    const item = this.items.find((entry) => entry.id === idOrSlug || entry.slug === idOrSlug) || null;
+    if (!item) return [];
+
+    const visibleCandidates = filterItemsForFeed(
+      this.items.filter((entry) => entry.id !== item.id),
+      'saved',
+      mode,
+      hiddenIds
+    );
+    const sourceSubjectsById = new Map(this.sources.map((source) => [source.id, source.subjects]));
+    const ranked = rankRelatedItems(
+      {
+        item,
+        sourceSubjects: sourceSubjectsById.get(item.sourceId) || item.subjects
+      },
+      visibleCandidates.map((candidate) => ({
+        item: candidate,
+        sourceSubjects: sourceSubjectsById.get(candidate.sourceId) || candidate.subjects
+      }))
+    );
+
+    return ranked.slice(0, 4).map((candidate) => candidate.item);
   }
 
   recordItemView(username: string, itemId: string) {

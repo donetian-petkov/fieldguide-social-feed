@@ -156,6 +156,33 @@ test('item detail records a view for the signed-in user', async () => {
   }
 });
 
+test('item detail returns backend-ranked related items', async () => {
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/items/item-sutton-hoo'
+    });
+
+    assert.equal(response.statusCode, 200);
+    const payload = response.json() as {
+      item: { id: string; subjects: string[] };
+      relatedItems: Array<{ id: string; subjects: string[] }>;
+    };
+    assert.ok(payload.relatedItems.length > 0);
+    assert.ok(payload.relatedItems.length <= 4);
+    assert.equal(payload.relatedItems.some((item) => item.id === payload.item.id), false);
+    assert.equal(
+      payload.relatedItems.some((item) => item.subjects.some((subject) => payload.item.subjects.includes(subject))),
+      true
+    );
+  } finally {
+    await app.close();
+  }
+});
+
 test('feed pagination returns a stable page slice and metadata', async () => {
   const { store, queues } = createHarness();
   const app = await buildApp({ config: testConfig, store, queues });

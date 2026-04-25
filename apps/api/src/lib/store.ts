@@ -98,6 +98,7 @@ export interface AppStore {
   getSavedIds(username: string): StoreResult<string[]>;
   getFeed(query: FeedQuery, username?: string | null): StoreResult<FeedResponse>;
   getItem(idOrSlug: string, username?: string | null): StoreResult<ContentItem | null>;
+  getRelatedItems(idOrSlug: string, username?: string | null): StoreResult<ContentItem[]>;
   recordItemView(username: string, itemId: string): StoreResult<{ ok: boolean }>;
   getProfile(username: string): StoreResult<PublicProfile | null>;
   listComments(itemId: string): StoreResult<CommentDto[]>;

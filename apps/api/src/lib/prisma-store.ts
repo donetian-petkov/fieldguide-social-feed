@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import argon2 from 'argon2';
 import { PrismaClient, type Prisma } from '@prisma/client';
+import { z } from 'zod';
 import type {
   AdminAiCredentialStatus,
   AdminAiUsageSummary,
@@ -26,7 +27,8 @@ import type {
 } from '@edu-feed/shared';
 import { DEMO_AI_CONFIG, filterItemsForFeed, resolveTranslation } from '@edu-feed/shared';
 
-import { estimateCostUsd, estimateTokens, fallbackModelForProvider, hasProviderKey, runCompletion } from './ai-runtime.js';
+import { estimateCostUsd, estimateTokens, fallbackModelForProvider, hasProviderKey, parseJsonCompletion, runCompletion } from './ai-runtime.js';
+import { rankRelatedItems } from './related-items.js';
 import { decryptAiSecret, encryptAiSecret } from './ai-secrets.js';
 import type { AdminSnapshot, AppStore, FeedResponse, RegisterInput } from './store.js';
 
@@ -95,6 +97,13 @@ type GeneratedStoryDraftWithRelations = Prisma.GeneratedStoryDraftGetPayload<{
 
 const DEFAULT_FONT = '"Fraunces", "Georgia", serif';
 const COMMENT_EDIT_WINDOW_MS = 15 * 60 * 1000;
+const RELATED_ITEMS_LIMIT = 4;
+const RELATED_ITEMS_AI_POOL_SIZE = 8;
+const RELATED_ITEMS_HIGH_BUDGET_MONTHLY_USD = 100;
+const RELATED_ITEMS_HIGH_BUDGET_PER_JOB_USD = 0.25;
+const relatedItemsSchema = z.object({
+  rankedIds: z.array(z.string()).max(RELATED_ITEMS_AI_POOL_SIZE)
+});
 
 function hashToken(token: string) {
   return createHash('sha256').update(token).digest('hex');
@@ -127,6 +136,18 @@ function subjectToFeed(subject: ContentItem['subject']) {
   if (subject === 'country_knowledge') return 'country-knowledge';
   if (subject === 'video') return 'videos';
   return subject;
+}
+
+function parseSourceSubjects(subjectsJson: string, fallback: SubjectTag[]) {
+  try {
+    const parsed = JSON.parse(subjectsJson) as unknown;
+    if (Array.isArray(parsed) && parsed.every((entry) => typeof entry === 'string')) {
+      return parsed as SubjectTag[];
+    }
+  } catch {
+    // Ignore malformed source subject metadata and fall back to the item's subject.
+  }
+  return fallback;
 }
 
 function buildSourceDefinition(source: SourceWithFeeds): SourceDefinition {
@@ -814,6 +835,78 @@ export class PrismaStore implements AppStore {
       : null;
     const mode = viewer?.settings?.contentMode || 'standard';
     return filterItemsForFeed([dto], 'saved', mode).length ? dto : null;
+  }
+
+  async getRelatedItems(idOrSlug: string, username?: string | null) {
+    const targetRecord = await this.findItem(idOrSlug);
+    if (!targetRecord) return [];
+
+    const viewer = username
+      ? await this.prisma.user.findUnique({
+          where: { username },
+          include: { settings: true }
+        })
+      : null;
+    const mode = viewer?.settings?.contentMode || 'standard';
+    const hiddenIds = viewer
+      ? (await this.prisma.hiddenItem.findMany({
+          where: { userId: viewer.id },
+          select: { itemId: true }
+        })).map((entry) => entry.itemId)
+      : [];
+
+    const candidateRecords = await this.prisma.contentItem.findMany({
+      where: {
+        removedAt: null,
+        id: {
+          not: targetRecord.id
+        }
+      },
+      include: {
+        source: {
+          include: {
+            feeds: true
+          }
+        },
+        author: {
+          include: {
+            settings: true
+          }
+        },
+        translations: true,
+        tags: true
+      },
+      orderBy: {
+        publishedAt: 'desc'
+      },
+      take: 120
+    });
+
+    const target = {
+      item: buildItemDto(targetRecord, this.appUrl),
+      sourceSubjects: parseSourceSubjects(targetRecord.source.subjectsJson, [targetRecord.subject])
+    };
+    const candidateMeta = candidateRecords.map((record) => ({
+      item: buildItemDto(record, this.appUrl),
+      sourceSubjects: parseSourceSubjects(record.source.subjectsJson, [record.subject])
+    }));
+    const visibleIds = new Set(
+      filterItemsForFeed(
+        candidateMeta.map((candidate) => candidate.item),
+        'saved',
+        mode,
+        hiddenIds
+      ).map((item) => item.id)
+    );
+    const ranked = rankRelatedItems(
+      target,
+      candidateMeta.filter((candidate) => visibleIds.has(candidate.item.id))
+    );
+    if (!ranked.length) return [];
+
+    const heuristicItems = ranked.slice(0, RELATED_ITEMS_AI_POOL_SIZE).map((candidate) => candidate.item);
+    const reranked = await this.tryAiRerankRelatedItems(target.item, heuristicItems);
+    return (reranked || heuristicItems).slice(0, RELATED_ITEMS_LIMIT);
   }
 
   async recordItemView(username: string, itemId: string) {
@@ -2541,6 +2634,13 @@ export class PrismaStore implements AppStore {
     return row ? aiConfigToDto(row) : DEMO_AI_CONFIG;
   }
 
+  private isHighBudgetRelatedRerankEnabled(aiConfig: AiModelConfig) {
+    return (
+      aiConfig.monthlyBudgetUsd >= RELATED_ITEMS_HIGH_BUDGET_MONTHLY_USD &&
+      aiConfig.perJobBudgetUsd >= RELATED_ITEMS_HIGH_BUDGET_PER_JOB_USD
+    );
+  }
+
   private async getMonthlyAiSpendUsd() {
     const now = new Date();
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -2555,6 +2655,107 @@ export class PrismaStore implements AppStore {
       }
     });
     return Number(aggregate._sum.totalCostUsd || 0);
+  }
+
+  private async tryAiRerankRelatedItems(targetItem: ContentItem, candidates: ContentItem[]) {
+    if (candidates.length < 2) return null;
+
+    const aiConfig = await this.getEffectiveAiConfig();
+    if (!this.isHighBudgetRelatedRerankEnabled(aiConfig)) {
+      return null;
+    }
+
+    const aiKeys = await this.getAiRuntimeKeys();
+    if (!hasProviderKey(aiConfig.provider, aiKeys)) {
+      return null;
+    }
+
+    const systemPrompt = [
+      'You rank related educational stories for a detail page.',
+      'Prefer items that deepen the same topic or provide the most useful adjacent research path.',
+      'Weight shared subjects, shared content tags, same source, and clear conceptual continuity.',
+      'Avoid weakly related filler.',
+      'Return JSON only in the form {"rankedIds":["id-1","id-2"]}.'
+    ].join(' ');
+    const userPrompt = [
+      `Current item id: ${targetItem.id}`,
+      `Current title: ${targetItem.originalTitle}`,
+      `Current summary: ${targetItem.originalSummary}`,
+      `Current source: ${targetItem.sourceName}`,
+      `Current subjects: ${targetItem.subjects.join(', ')}`,
+      `Current tags: ${targetItem.tags.map((tag) => `${tag.type}:${tag.value}`).join(', ')}`,
+      'Candidates:',
+      ...candidates.map((candidate) =>
+        [
+          `- id: ${candidate.id}`,
+          `  title: ${candidate.originalTitle}`,
+          `  summary: ${candidate.originalSummary}`,
+          `  source: ${candidate.sourceName}`,
+          `  subjects: ${candidate.subjects.join(', ')}`,
+          `  tags: ${candidate.tags.map((tag) => `${tag.type}:${tag.value}`).join(', ')}`
+        ].join('\n')
+      )
+    ].join('\n');
+
+    const estimatedInput = estimateTokens(`${systemPrompt}\n${userPrompt}`);
+    const estimatedOutput = 140;
+    let model = aiConfig.askModel;
+    let estimatedCost = estimateCostUsd(model, estimatedInput, estimatedOutput);
+    if (aiConfig.autoDowngrade && estimatedCost > aiConfig.perJobBudgetUsd) {
+      model = fallbackModelForProvider(aiConfig.provider);
+      estimatedCost = estimateCostUsd(model, estimatedInput, estimatedOutput);
+    }
+
+    const monthlySpent = await this.getMonthlyAiSpendUsd();
+    if (monthlySpent + estimatedCost > aiConfig.monthlyBudgetUsd && aiConfig.pauseOnBudgetExceeded) {
+      return null;
+    }
+    if (estimatedCost > aiConfig.perJobBudgetUsd) {
+      return null;
+    }
+
+    try {
+      const completion = await runCompletion({
+        provider: aiConfig.provider,
+        model,
+        systemPrompt,
+        userPrompt,
+        temperature: 0.1,
+        maxOutputTokens: estimatedOutput,
+        keys: aiKeys
+      });
+      const parsed = parseJsonCompletion(completion.text, relatedItemsSchema);
+      const byId = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+      const ordered = parsed.rankedIds
+        .map((candidateId) => byId.get(candidateId))
+        .filter(Boolean) as ContentItem[];
+      const finalItems = [
+        ...ordered,
+        ...candidates.filter((candidate) => !ordered.some((entry) => entry.id === candidate.id))
+      ].slice(0, RELATED_ITEMS_LIMIT);
+      await this.prisma.aiUsageLedger.create({
+        data: {
+          itemId: targetItem.id,
+          provider: aiConfig.provider,
+          model,
+          purpose: 'related',
+          inputTokens: completion.inputTokens,
+          outputTokens: completion.outputTokens,
+          totalCostUsd: estimateCostUsd(model, completion.inputTokens, completion.outputTokens)
+        }
+      });
+      return finalItems;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown related-item rerank failure.';
+      await this.prisma.systemErrorEvent.create({
+        data: {
+          scope: 'ai',
+          level: 'warn',
+          message: `Related item AI rerank fallback: ${message}`
+        }
+      });
+      return null;
+    }
   }
 
   private async ensureCommunitySource(tx: Prisma.TransactionClient) {

@@ -39,6 +39,7 @@ type FeedResponse = {
 type ItemResponse = {
   item: ContentItem;
   comments: CommentDto[];
+  relatedItems: ContentItem[];
 };
 
 type AlbumDetailResponse = {

@@ -50,7 +50,7 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
   const [savedState, setSavedState] = useState(false);
   const item = itemQuery.data?.item || fallback?.item || null;
   const comments = itemQuery.data?.comments || fallback?.comments || [];
-  const relatedItems = fallback?.relatedItems || [];
+  const relatedItems = itemQuery.data?.relatedItems || fallback?.relatedItems || [];
   const translation = item ? item.translations.find((entry) => entry.language === viewer.language) || item.translations[0] : null;
   const albums = albumsQuery.data?.albums || [];
   const translatedArtifact = item?.translations.find((entry) => entry.aiAudit) || null;
@@ -351,20 +351,22 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
           </Box>
         </Box>
 
-        <SectionCard title="Related items" eyebrow="More to research">
-          <Stack spacing={2}>
-            {relatedItems.map((relatedItem) => (
-              <ArticleCard
-                key={relatedItem.id}
-                item={relatedItem}
-                language={viewer.language}
-                languageMode={viewer.contentLanguageMode}
-                commentCount={0}
-                isSaved={savedIds.includes(relatedItem.id)}
-              />
-            ))}
-          </Stack>
-        </SectionCard>
+        {relatedItems.length ? (
+          <SectionCard title="Related items" eyebrow="More to research">
+            <Stack spacing={2}>
+              {relatedItems.map((relatedItem) => (
+                <ArticleCard
+                  key={relatedItem.id}
+                  item={relatedItem}
+                  language={viewer.language}
+                  languageMode={viewer.contentLanguageMode}
+                  commentCount={0}
+                  isSaved={savedIds.includes(relatedItem.id)}
+                />
+              ))}
+            </Stack>
+          </SectionCard>
+        ) : null}
       </Stack>
     </AppShell>
   );
