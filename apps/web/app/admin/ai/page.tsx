@@ -289,7 +289,7 @@ export default function AdminAiPage() {
         </Box>
         {aiAvailable ? (
           <Box sx={{ gridColumn: { xs: 'auto', md: '1 / -1' } }}>
-          <SectionCard title="Manual generated stories" eyebrow="Admin approval only">
+          <SectionCard title="Generate stories" eyebrow="Admin approval only">
             <Stack spacing={2.5}>
               <Alert severity="info">
                 Phase 1 creates verifier-scored drafts only. Nothing enters the feed until an admin approves it here.
@@ -318,7 +318,7 @@ export default function AdminAiPage() {
                   ))}
                 </TextField>
                 <TextField
-                  label="Draft request"
+                  label="Story request"
                   placeholder="Example: Build a short educational story about why Roman road networks still matter."
                   value={storyPrompt}
                   onChange={(event) => setStoryPrompt(event.target.value)}
