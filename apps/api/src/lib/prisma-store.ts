@@ -219,7 +219,32 @@ function buildAiArtifactAudit(record: {
   };
 }
 
-function buildItemDto(item: ItemWithRelations): ContentItem {
+function isLoopbackHost(hostname: string) {
+  return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
+function isAppLocalUrl(candidateUrl: string, appUrl: string) {
+  try {
+    const candidate = new URL(candidateUrl);
+    const app = new URL(appUrl);
+    if (candidate.origin === app.origin) return true;
+    return (
+      candidate.port === app.port &&
+      isLoopbackHost(candidate.hostname) &&
+      isLoopbackHost(app.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function normalizeExternalUrl(candidateUrl: string | null | undefined, appUrl: string) {
+  if (!candidateUrl?.trim()) return null;
+  const normalized = candidateUrl.trim();
+  return isAppLocalUrl(normalized, appUrl) ? null : normalized;
+}
+
+function buildItemDto(item: ItemWithRelations, appUrl: string): ContentItem {
   const tags = buildTags(item);
   const subjectTags = tags.filter((tag) => tag.type === 'subject').map((tag) => tag.value) as ContentItem['subjects'];
   const flags = tags.filter((tag) => tag.type === 'flag').map((tag) => tag.value) as ModerationFlag[];
@@ -238,7 +263,7 @@ function buildItemDto(item: ItemWithRelations): ContentItem {
     originalTitle: item.originalTitle,
     originalSummary: item.originalSummary,
     coverImageUrl: item.coverImageUrl,
-    externalUrl: item.externalUrl,
+    externalUrl: normalizeExternalUrl(item.externalUrl, appUrl),
     youtubeVideoId: item.youtubeVideoId,
     subject: item.subject,
     subjects: subjectTags.length ? subjectTags : [item.subject],
@@ -729,7 +754,7 @@ export class PrismaStore implements AppStore {
         publishedAt: 'desc'
       }
     });
-    const allItems = itemRecords.map(buildItemDto);
+    const allItems = itemRecords.map((item) => buildItemDto(item, this.appUrl));
     let items =
       query.feed === 'saved'
         ? allItems.filter((item) => savedIds.includes(item.id))
@@ -780,7 +805,7 @@ export class PrismaStore implements AppStore {
   async getItem(idOrSlug: string, username?: string | null) {
     const record = await this.findItem(idOrSlug);
     if (!record) return null;
-    const dto = buildItemDto(record);
+    const dto = buildItemDto(record, this.appUrl);
     const viewer = username
       ? await this.prisma.user.findUnique({
           where: { username },
@@ -856,7 +881,7 @@ export class PrismaStore implements AppStore {
     return {
       username: user.username,
       displayName: user.settings?.displayName || user.username,
-      items: items.map(buildItemDto)
+      items: items.map((item) => buildItemDto(item, this.appUrl))
     };
   }
 
@@ -1032,7 +1057,7 @@ export class PrismaStore implements AppStore {
         tags: true
       }
     });
-    const itemsById = new Map(itemRecords.map((item) => [item.id, buildItemDto(item)]));
+    const itemsById = new Map(itemRecords.map((item) => [item.id, buildItemDto(item, this.appUrl)]));
 
     return {
       album: buildAlbumDto(album),
@@ -1230,11 +1255,15 @@ export class PrismaStore implements AppStore {
 
   async createSubmission(username: string, input: { type: 'link' | 'community_post'; title: string; sourceUrl?: string | null; body?: string | null }) {
     const user = await this.requireUser(username);
+    const normalizedSourceUrl = normalizeExternalUrl(input.sourceUrl, this.appUrl);
+    if (input.type === 'link' && !normalizedSourceUrl) {
+      throw new Error('Community link submissions must point to an external source URL.');
+    }
     const submission = await this.prisma.submission.create({
       data: {
         type: input.type,
         title: input.title,
-        sourceUrl: input.sourceUrl || null,
+        sourceUrl: normalizedSourceUrl,
         body: input.body || null,
         submittedById: user.id
       },
@@ -1553,7 +1582,7 @@ export class PrismaStore implements AppStore {
       sources,
       submissions: submissions.map(buildSubmissionDto),
       users: users.map(buildUserDto),
-      items: items.map(buildItemDto),
+      items: items.map((item) => buildItemDto(item, this.appUrl)),
       comments: comments.map(buildCommentDto),
       errorLogs: errorLogs.map((log) => ({
         id: log.id,
@@ -1851,7 +1880,7 @@ export class PrismaStore implements AppStore {
           reviewedAt: new Date()
         }
       });
-      approvedItem = buildItemDto(item);
+      approvedItem = buildItemDto(item, this.appUrl);
     });
 
     const updated = await this.prisma.generatedStoryDraft.findUnique({
@@ -1997,6 +2026,7 @@ export class PrismaStore implements AppStore {
       await this.prisma.$transaction(async (tx) => {
         const source = await this.ensureCommunitySource(tx);
         const title = submission.title.trim();
+        const normalizedSourceUrl = normalizeExternalUrl(submission.sourceUrl, this.appUrl);
         const summary =
           submission.body?.trim().slice(0, 280) ||
           `An approved community submission from ${submission.submittedBy.username} that is now available in the community feed.`;
@@ -2014,7 +2044,7 @@ export class PrismaStore implements AppStore {
             originalSummary: summary,
             bodyMarkdown: submission.body || null,
             coverImageUrl: source.iconUrl,
-            externalUrl: submission.sourceUrl || null,
+            externalUrl: normalizedSourceUrl,
             subject: 'community',
             audience: 'standard_only',
             translations: {
@@ -2068,7 +2098,7 @@ export class PrismaStore implements AppStore {
             tags: true
           }
         });
-        approvedItem = buildItemDto(item);
+        approvedItem = buildItemDto(item, this.appUrl);
 
         await tx.submission.update({
           where: {
@@ -2112,7 +2142,7 @@ export class PrismaStore implements AppStore {
           tags: true
         }
       });
-      approvedItem = existing ? buildItemDto(existing) : null;
+      approvedItem = existing ? buildItemDto(existing, this.appUrl) : null;
     }
 
     const updated = await this.prisma.submission.findUnique({
@@ -2212,7 +2242,7 @@ export class PrismaStore implements AppStore {
 
     const updated = await this.findItem(itemId);
     if (!updated) throw new Error('Item not found.');
-    return buildItemDto(updated);
+    return buildItemDto(updated, this.appUrl);
   }
 
   async removeItem(itemId: string, removed: boolean) {
@@ -2237,7 +2267,7 @@ export class PrismaStore implements AppStore {
     });
     const updated = await this.findItem(itemId, true);
     if (!updated) throw new Error('Item not found.');
-    return buildItemDto(updated);
+    return buildItemDto(updated, this.appUrl);
   }
 
   async pinItem(itemId: string, slot: number) {
@@ -2271,7 +2301,7 @@ export class PrismaStore implements AppStore {
 
     const updated = await this.findItem(itemId);
     if (!updated) throw new Error('Item not found.');
-    return buildItemDto(updated);
+    return buildItemDto(updated, this.appUrl);
   }
 
   async lockComments(itemId: string, locked: boolean) {

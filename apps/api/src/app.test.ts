@@ -678,3 +678,30 @@ test('approved community submissions appear in the community feed and author pro
     await app.close();
   }
 });
+
+test('community link submissions reject Fieldguide URLs as source links', async () => {
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    const userCookie = await login(app, 'mila', 'fieldguide123');
+
+    const submitResponse = await app.inject({
+      method: 'POST',
+      url: '/v1/submissions',
+      headers: {
+        cookie: userCookie
+      },
+      payload: {
+        type: 'link',
+        title: 'Recursive community link',
+        sourceUrl: `${testConfig.APP_URL}/item/item-sutton-hoo`
+      }
+    });
+
+    assert.equal(submitResponse.statusCode, 400);
+    assert.match(submitResponse.json().error as string, /external source url/i);
+  } finally {
+    await app.close();
+  }
+});

@@ -108,6 +108,27 @@ function subjectToFeed(subject: ContentItem['subject']): SubjectFeed {
   return subject;
 }
 
+function isLoopbackHost(hostname: string) {
+  return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
+function isAppLocalUrl(candidateUrl: string, appUrl: string) {
+  try {
+    const candidate = new URL(candidateUrl);
+    const app = new URL(appUrl);
+    if (candidate.origin === app.origin) return true;
+    return candidate.port === app.port && isLoopbackHost(candidate.hostname) && isLoopbackHost(app.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function normalizeExternalUrl(candidateUrl: string | null | undefined, appUrl: string) {
+  if (!candidateUrl?.trim()) return null;
+  const normalized = candidateUrl.trim();
+  return isAppLocalUrl(normalized, appUrl) ? null : normalized;
+}
+
 export class DemoStore {
   private readonly sessionTtlMs: number;
 
@@ -570,11 +591,15 @@ export class DemoStore {
   }
 
   createSubmission(username: string, input: { type: 'link' | 'community_post'; title: string; sourceUrl?: string | null; body?: string | null }) {
+    const normalizedSourceUrl = normalizeExternalUrl(input.sourceUrl, this.appUrl);
+    if (input.type === 'link' && !normalizedSourceUrl) {
+      throw new Error('Community link submissions must point to an external source URL.');
+    }
     const submission: SubmissionDto = {
       id: `submission-${randomUUID()}`,
       type: input.type,
       title: input.title,
-      sourceUrl: input.sourceUrl || null,
+      sourceUrl: normalizedSourceUrl,
       body: input.body || null,
       submittedBy: username,
       status: 'pending',
@@ -938,6 +963,7 @@ export class DemoStore {
         ) || null;
 
       if (!item) {
+        const normalizedSourceUrl = normalizeExternalUrl(submission.sourceUrl, this.appUrl);
         item = {
           id: `item-${randomUUID()}`,
           slug: `${submission.title.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-')}-${randomUUID().slice(0, 8)}`,
@@ -952,7 +978,7 @@ export class DemoStore {
           originalSummary:
             submission.body?.slice(0, 280) || `Approved community submission shared by ${submission.submittedBy}.`,
           coverImageUrl: communitySource.iconUrl,
-          externalUrl: submission.sourceUrl,
+          externalUrl: normalizedSourceUrl,
           youtubeVideoId: null,
           subject: 'community',
           subjects: ['community'],

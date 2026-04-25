@@ -333,18 +333,20 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
                   {libraryMessage ? <Alert severity="info">{libraryMessage}</Alert> : null}
                 </Stack>
               </SectionCard>
-              <SectionCard title="Original source" eyebrow="Outbound">
-                <Button
-                  component="a"
-                  href={item.externalUrl || '#'}
-                  target="_blank"
-                  rel="noreferrer"
-                  endIcon={<ArrowOutwardRoundedIcon />}
-                  variant="contained"
-                >
-                  Read or watch the original
-                </Button>
-              </SectionCard>
+              {item.externalUrl ? (
+                <SectionCard title="Original source" eyebrow="Outbound">
+                  <Button
+                    component="a"
+                    href={item.externalUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    endIcon={<ArrowOutwardRoundedIcon />}
+                    variant="contained"
+                  >
+                    Read or watch the original
+                  </Button>
+                </SectionCard>
+              ) : null}
             </Stack>
           </Box>
         </Box>
