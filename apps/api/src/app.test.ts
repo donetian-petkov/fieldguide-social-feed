@@ -658,12 +658,22 @@ test('approved community submissions appear in the community feed and author pro
     });
 
     assert.equal(profileResponse.statusCode, 200);
+    assert.equal(profileResponse.json().displayName, 'Mila Petrova');
     assert.equal(
       profileResponse
         .json()
         .items.some((item: { slug: string }) => item.slug === approvedItem?.slug),
       true
     );
+
+    const adminProfileResponse = await app.inject({
+      method: 'GET',
+      url: '/v1/profile/admin'
+    });
+
+    assert.equal(adminProfileResponse.statusCode, 200);
+    assert.equal(adminProfileResponse.json().username, 'admin');
+    assert.equal(adminProfileResponse.json().items.length, 0);
   } finally {
     await app.close();
   }

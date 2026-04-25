@@ -57,14 +57,11 @@ export async function registerMeRoutes(app: FastifyInstance, options: { store: A
 
   app.get('/v1/profile/:username', async (request, reply) => {
     const params = request.params as { username: string };
-    const profileItems = await options.store.getProfileItems(params.username);
-    if (!profileItems.length) {
+    const profile = await options.store.getProfile(params.username);
+    if (!profile) {
       reply.code(404);
       return { error: 'Profile not found.' };
     }
-    return {
-      username: params.username,
-      items: profileItems
-    };
+    return profile;
   });
 }

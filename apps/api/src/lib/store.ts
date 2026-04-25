@@ -77,6 +77,12 @@ export type AlbumDetail = {
   items: ContentItem[];
 };
 
+export type PublicProfile = {
+  username: string;
+  displayName: string;
+  items: ContentItem[];
+};
+
 export type StoreResult<T> = T | Promise<T>;
 
 export interface AppStore {
@@ -93,7 +99,7 @@ export interface AppStore {
   getFeed(query: FeedQuery, username?: string | null): StoreResult<FeedResponse>;
   getItem(idOrSlug: string, username?: string | null): StoreResult<ContentItem | null>;
   recordItemView(username: string, itemId: string): StoreResult<{ ok: boolean }>;
-  getProfileItems(username: string): StoreResult<ContentItem[]>;
+  getProfile(username: string): StoreResult<PublicProfile | null>;
   listComments(itemId: string): StoreResult<CommentDto[]>;
   addComment(username: string, itemId: string, body: string): StoreResult<CommentDto>;
   hideItem(username: string, itemId: string): StoreResult<{ ok: boolean; hiddenIds: string[] }>;

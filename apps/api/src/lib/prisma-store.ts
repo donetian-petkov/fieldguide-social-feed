@@ -817,7 +817,17 @@ export class PrismaStore implements AppStore {
     };
   }
 
-  async getProfileItems(username: string) {
+  async getProfile(username: string) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        username
+      },
+      include: {
+        settings: true
+      }
+    });
+    if (!user) return null;
+
     const items = await this.prisma.contentItem.findMany({
       where: {
         author: {
@@ -843,7 +853,11 @@ export class PrismaStore implements AppStore {
         publishedAt: 'desc'
       }
     });
-    return items.map(buildItemDto);
+    return {
+      username: user.username,
+      displayName: user.settings?.displayName || user.username,
+      items: items.map(buildItemDto)
+    };
   }
 
   async listComments(itemId: string) {

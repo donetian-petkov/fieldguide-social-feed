@@ -426,8 +426,14 @@ export class DemoStore {
     return { ok: true };
   }
 
-  getProfileItems(username: string) {
-    return this.items.filter((item) => item.authorUsername === username && !this.removedItemIds.has(item.id));
+  getProfile(username: string) {
+    const user = this.users.find((entry) => entry.username === username);
+    if (!user) return null;
+    return {
+      username: user.username,
+      displayName: user.displayName,
+      items: this.items.filter((item) => item.authorUsername === username && !this.removedItemIds.has(item.id))
+    };
   }
 
   listComments(itemId: string) {

@@ -48,6 +48,7 @@ type AlbumDetailResponse = {
 
 type ProfileResponse = {
   username: string;
+  displayName: string;
   items: ContentItem[];
 };
 

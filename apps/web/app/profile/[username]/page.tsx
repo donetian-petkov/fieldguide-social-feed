@@ -15,7 +15,7 @@ export default function ProfilePage({ params }: { params: { username: string } }
   const profileQuery = useProfileQuery(params.username);
   const items = profileQuery.data?.items || fallback?.items || [];
   const username = profileQuery.data?.username || fallback?.user.username || params.username;
-  const displayName = fallback?.user.displayName || username;
+  const displayName = profileQuery.data?.displayName || fallback?.user.displayName || username;
 
   if (profileQuery.isLoading) {
     return (
