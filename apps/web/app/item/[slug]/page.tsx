@@ -8,6 +8,7 @@ import { Alert, Box, Button, Chip, FormControl, InputLabel, MenuItem, Select, St
 import type { CommentDto, ContentItem } from '@edu-feed/shared';
 
 import { AppShell } from '../../components/AppShell';
+import { AdminPinButton } from '../../components/AdminPinButton';
 import { AskAiCard } from '../../components/AskAiCard';
 import { ArticleCard } from '../../components/ArticleCard';
 import { ContentImage } from '../../components/ContentImage';
@@ -235,6 +236,16 @@ export default function ItemPage({ params }: { params: { slug: string } }) {
                       <AiAuditRow label={`Translation (${translatedArtifact.language.toUpperCase()})`} audit={translatedArtifact.aiAudit} />
                     ) : null}
                     {item.ai.classificationAudit ? <AiAuditRow label="Classification" audit={item.ai.classificationAudit} /> : null}
+                  </Stack>
+                </SectionCard>
+              ) : null}
+              {isAuthenticated && viewer.role === 'admin' ? (
+                <SectionCard title="Admin placement" eyebrow="Pinned rail controls">
+                  <Stack spacing={1.5}>
+                    <Typography variant="body2" color="text.secondary">
+                      Pin this item directly into one of the three pinned slots for its feed.
+                    </Typography>
+                    <AdminPinButton itemId={item.id} pinned={item.pinned} fullWidth />
                   </Stack>
                 </SectionCard>
               ) : null}

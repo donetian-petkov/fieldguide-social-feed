@@ -36,6 +36,7 @@ import { resolveTranslation } from '@edu-feed/shared';
 
 import { useHideItemMutation, useRuntimeHealthQuery, useSaveItemMutation, useShareItemMutation, useUnsaveItemMutation } from '../lib/api';
 import { useSessionViewer } from '../lib/session';
+import { AdminPinButton } from './AdminPinButton';
 import { AskAiCard } from './AskAiCard';
 import { ContentImage } from './ContentImage';
 import { SourceMark } from './SourceMark';
@@ -77,6 +78,7 @@ export function ArticleCard({
   const bulgarian = resolveTranslation(item, 'bg');
   const detailHref = `/item/${item.slug}`;
   const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
+  const isAdminViewer = isAuthenticated && viewer.role === 'admin';
   const saveBusy = saveItemState.isLoading || unsaveItemState.isLoading;
   const nativeShareAvailable = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
   const shareMenuOpen = Boolean(shareAnchorEl);
@@ -268,6 +270,7 @@ export function ArticleCard({
               <Button component={Link} href={detailHref} startIcon={<OpenInNewRoundedIcon />} variant="contained">
                 Open story
               </Button>
+              {isAdminViewer ? <AdminPinButton itemId={item.id} pinned={item.pinned} /> : null}
               {!isAuthenticated ? (
                 <Button component={Link} href="/auth" startIcon={<BookmarkBorderRoundedIcon />} variant="outlined">
                   Sign in to save
