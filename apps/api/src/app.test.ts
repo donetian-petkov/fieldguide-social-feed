@@ -315,6 +315,85 @@ test('admin routes reject non-admin users and schedule new sources for ingestion
   }
 });
 
+test('admin AI credential routes require admin access and affect runtime AI availability', async () => {
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    const userCookie = await login(app, 'alex', 'fieldguide123');
+    const forbidden = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/ai/credentials',
+      headers: {
+        cookie: userCookie
+      }
+    });
+    assert.equal(forbidden.statusCode, 403);
+
+    const adminCookie = await login(app, 'admin', 'fieldguide123');
+    const initialHealth = await app.inject({
+      method: 'GET',
+      url: '/health'
+    });
+    assert.equal(initialHealth.statusCode, 200);
+    assert.equal(initialHealth.json().aiAvailable, false);
+
+    const initialCredentials = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/ai/credentials',
+      headers: {
+        cookie: adminCookie
+      }
+    });
+    assert.equal(initialCredentials.statusCode, 200);
+    assert.equal(initialCredentials.json().credentials.openai.source, 'none');
+
+    const saveResponse = await app.inject({
+      method: 'PUT',
+      url: '/v1/admin/ai/credentials',
+      headers: {
+        cookie: adminCookie
+      },
+      payload: {
+        provider: 'openai',
+        apiKey: 'sk-test-admin'
+      }
+    });
+    assert.equal(saveResponse.statusCode, 200);
+    assert.equal(saveResponse.json().credentials.openai.source, 'database');
+
+    const enabledHealth = await app.inject({
+      method: 'GET',
+      url: '/health'
+    });
+    assert.equal(enabledHealth.statusCode, 200);
+    assert.equal(enabledHealth.json().aiAvailable, true);
+
+    const clearResponse = await app.inject({
+      method: 'PUT',
+      url: '/v1/admin/ai/credentials',
+      headers: {
+        cookie: adminCookie
+      },
+      payload: {
+        provider: 'openai',
+        clear: true
+      }
+    });
+    assert.equal(clearResponse.statusCode, 200);
+    assert.equal(clearResponse.json().credentials.openai.source, 'none');
+
+    const clearedHealth = await app.inject({
+      method: 'GET',
+      url: '/health'
+    });
+    assert.equal(clearedHealth.statusCode, 200);
+    assert.equal(clearedHealth.json().aiAvailable, false);
+  } finally {
+    await app.close();
+  }
+});
+
 test('admin generated story drafts require admin access and approval before publishing', async () => {
   const { store, queues } = createHarness();
   const app = await buildApp({ config: testConfig, store, queues });

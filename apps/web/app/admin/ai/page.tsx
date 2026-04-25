@@ -23,9 +23,11 @@ import { SectionCard } from '../../components/SectionCard';
 import { DEMO_FALLBACK_ENABLED, getAdminModel, getEmptyAdminModel } from '../../lib/demo';
 import {
   useAdminDashboardQuery,
+  useAdminAiCredentialsQuery,
   useRuntimeHealthQuery,
   useRequestGeneratedStoryMutation,
   useReviewGeneratedStoryMutation,
+  useUpdateAdminAiCredentialMutation,
   useUpdateAiConfigMutation
 } from '../../lib/api';
 import { useSessionViewer } from '../../lib/session';
@@ -41,6 +43,18 @@ const SUBJECT_OPTIONS: Array<{ value: SubjectTag; label: string }> = [
   { value: 'video', label: 'Videos' }
 ];
 
+const PROVIDER_LABELS: Record<AiModelConfig['provider'], string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  openrouter: 'OpenRouter'
+};
+
+const EMPTY_CREDENTIALS = {
+  openai: { configured: false, source: 'none' as const },
+  anthropic: { configured: false, source: 'none' as const },
+  openrouter: { configured: false, source: 'none' as const }
+};
+
 function draftStatusCopy(draft: GeneratedStoryDraftDto) {
   if (draft.status === 'queued') return 'Queued for worker generation';
   if (draft.status === 'draft') return `Verifier passed at ${(draft.verification?.score || 0).toFixed(2)}`;
@@ -49,20 +63,35 @@ function draftStatusCopy(draft: GeneratedStoryDraftDto) {
   return 'Rejected by admin';
 }
 
+function credentialStatusCopy(provider: AiModelConfig['provider'], state: { configured: boolean; source: 'none' | 'environment' | 'database' }) {
+  const providerLabel = PROVIDER_LABELS[provider];
+  if (state.source === 'database') {
+    return `${providerLabel} is using a key stored in the database. Saving a new one here replaces it immediately.`;
+  }
+  if (state.source === 'environment') {
+    return `${providerLabel} is currently using a key from the server environment. Saving a key here overrides the env key without a restart.`;
+  }
+  return `No ${providerLabel} key is configured. AI stays unavailable for this provider until you save one here or set it in the repo .env.`;
+}
+
 export default function AdminAiPage() {
   const fallback = DEMO_FALLBACK_ENABLED ? getAdminModel() : getEmptyAdminModel();
   const { viewer } = useSessionViewer();
   const adminQuery = useAdminDashboardQuery();
+  const credentialsQuery = useAdminAiCredentialsQuery();
   const healthQuery = useRuntimeHealthQuery();
   const [updateAiConfig, updateState] = useUpdateAiConfigMutation();
+  const [updateAdminAiCredential, credentialState] = useUpdateAdminAiCredentialMutation();
   const [requestGeneratedStory, requestState] = useRequestGeneratedStoryMutation();
   const [reviewGeneratedStory, reviewState] = useReviewGeneratedStoryMutation();
   const model = adminQuery.data || fallback;
   const [toast, setToast] = useState<string | null>(null);
   const [form, setForm] = useState<AiModelConfig>(model.aiConfig);
+  const [providerApiKey, setProviderApiKey] = useState('');
   const [storySubject, setStorySubject] = useState<SubjectTag>('history');
   const [storyPrompt, setStoryPrompt] = useState('');
   const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
+  const selectedCredential = (credentialsQuery.data?.credentials || EMPTY_CREDENTIALS)[form.provider];
 
   useEffect(() => {
     setForm(model.aiConfig);
@@ -106,8 +135,34 @@ export default function AdminAiPage() {
     }
   }
 
+  async function handleSaveProviderKey() {
+    try {
+      await updateAdminAiCredential({
+        provider: form.provider,
+        apiKey: providerApiKey.trim()
+      }).unwrap();
+      setProviderApiKey('');
+      setToast(`${PROVIDER_LABELS[form.provider]} API key saved.`);
+    } catch {
+      setToast('Could not save the provider API key.');
+    }
+  }
+
+  async function handleClearProviderKey() {
+    try {
+      await updateAdminAiCredential({
+        provider: form.provider,
+        clear: true
+      }).unwrap();
+      setProviderApiKey('');
+      setToast(`${PROVIDER_LABELS[form.provider]} database key cleared.`);
+    } catch {
+      setToast('Could not clear the stored provider key.');
+    }
+  }
+
   return (
-    <AppShell title="Admin AI" subtitle="Provider, models, budgets, and usage tracking." viewer={viewer}>
+    <AppShell title="Admin AI" subtitle="Provider keys, models, budgets, and usage tracking." viewer={viewer}>
       <Box
         sx={{
           display: 'grid',
@@ -134,6 +189,35 @@ export default function AdminAiPage() {
                 <MenuItem value="anthropic">Anthropic</MenuItem>
                 <MenuItem value="openrouter">OpenRouter</MenuItem>
               </TextField>
+              <Alert severity={selectedCredential.configured ? 'success' : 'warning'}>
+                {credentialStatusCopy(form.provider, selectedCredential)}
+              </Alert>
+              <TextField
+                label={`${PROVIDER_LABELS[form.provider]} API key`}
+                type="password"
+                value={providerApiKey}
+                onChange={(event) => setProviderApiKey(event.target.value)}
+                autoComplete="new-password"
+                helperText="Keys are stored server-side and never returned to the browser after save."
+              />
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                <Button
+                  variant="contained"
+                  onClick={() => void handleSaveProviderKey()}
+                  disabled={credentialState.isLoading || providerApiKey.trim().length < 8}
+                >
+                  {credentialState.isLoading ? 'Saving key...' : 'Save Provider Key'}
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="inherit"
+                  onClick={() => void handleClearProviderKey()}
+                  disabled={credentialState.isLoading || selectedCredential.source !== 'database'}
+                >
+                  Clear Stored Key
+                </Button>
+              </Stack>
+              <Divider />
               <TextField
                 label="Summary model"
                 value={form.summaryModel}

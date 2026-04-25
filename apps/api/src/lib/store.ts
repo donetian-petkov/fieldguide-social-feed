@@ -1,4 +1,5 @@
 import type {
+  AdminAiCredentialStatus,
   AdminAiUsageSummary,
   AiModelConfig,
   AiUsageSnapshot,
@@ -19,6 +20,12 @@ import type {
   UserRole,
   UserSettingsDto
 } from '@edu-feed/shared';
+
+export type RuntimeAiKeys = {
+  OPENAI_API_KEY: string;
+  ANTHROPIC_API_KEY: string;
+  OPENROUTER_API_KEY: string;
+};
 
 export type RegisterInput = {
   username: string;
@@ -108,8 +115,12 @@ export interface AppStore {
   ): StoreResult<SubmissionDto>;
   askAi(itemId: string, question: string, language: InterfaceLanguage, username?: string | null): StoreResult<AskAiResult>;
   shareItem(itemId: string): StoreResult<ShareResult>;
+  getAiConfig(): StoreResult<AiModelConfig>;
+  getAiRuntimeKeys(): StoreResult<RuntimeAiKeys>;
   getAdminSnapshot(): StoreResult<AdminSnapshot>;
   getAdminAiUsageSummary(): StoreResult<AdminAiUsageSummary>;
+  getAdminAiCredentialStatus(): StoreResult<AdminAiCredentialStatus>;
+  setAdminAiProviderKey(provider: AiModelConfig['provider'], apiKey: string | null): StoreResult<AdminAiCredentialStatus>;
   listGeneratedStoryDrafts(): StoreResult<GeneratedStoryDraftDto[]>;
   requestGeneratedStory(username: string, input: GeneratedStoryRequestInput): StoreResult<GeneratedStoryDraftDto>;
   reviewGeneratedStory(

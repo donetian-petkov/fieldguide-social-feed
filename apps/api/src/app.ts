@@ -47,11 +47,17 @@ export async function buildApp(options?: {
       ? new DemoStore({
           sessionTtlHours: config.SESSION_TTL_HOURS,
           modeSwitchTtlMinutes: config.MODE_SWITCH_TTL_MINUTES,
-          appUrl: config.APP_URL
+          appUrl: config.APP_URL,
+          aiKeys: {
+            OPENAI_API_KEY: config.OPENAI_API_KEY,
+            ANTHROPIC_API_KEY: config.ANTHROPIC_API_KEY,
+            OPENROUTER_API_KEY: config.OPENROUTER_API_KEY
+          }
         })
       : new PrismaStore(prisma!, {
           modeSwitchTtlMinutes: config.MODE_SWITCH_TTL_MINUTES,
           appUrl: config.APP_URL,
+          encryptionSecret: config.COOKIE_SECRET,
           aiKeys: {
             OPENAI_API_KEY: config.OPENAI_API_KEY,
             ANTHROPIC_API_KEY: config.ANTHROPIC_API_KEY,
@@ -83,7 +89,7 @@ export async function buildApp(options?: {
     ok: true,
     mode: config.DEMO_MODE ? 'demo' : 'database',
     uptime: process.uptime(),
-    ...(await resolveAiCapabilities(prisma, config))
+    ...(await resolveAiCapabilities(store))
   }));
 
   await registerMediaRoutes(app);
@@ -100,24 +106,11 @@ export async function buildApp(options?: {
   return app;
 }
 
-async function resolveAiCapabilities(prisma: PrismaClient | null, config: AppConfig) {
-  const configured = prisma
-    ? await prisma.aiConfig.findUnique({
-        where: {
-          id: 1
-        },
-        select: {
-          provider: true
-        }
-      })
-    : null;
-  const provider = (configured?.provider || config.DEFAULT_AI_PROVIDER) as AppConfig['DEFAULT_AI_PROVIDER'];
+async function resolveAiCapabilities(store: AppStore) {
+  const [aiConfig, aiKeys] = await Promise.all([store.getAiConfig(), store.getAiRuntimeKeys()]);
+  const provider = aiConfig.provider;
   return {
-    aiAvailable: hasProviderKey(provider, {
-      OPENAI_API_KEY: config.OPENAI_API_KEY,
-      ANTHROPIC_API_KEY: config.ANTHROPIC_API_KEY,
-      OPENROUTER_API_KEY: config.OPENROUTER_API_KEY
-    }),
+    aiAvailable: hasProviderKey(provider, aiKeys),
     aiProvider: provider
   };
 }

@@ -22,6 +22,7 @@ import { Resend } from 'resend';
 import { z } from 'zod';
 
 import { getWorkerConfig } from '../config.js';
+import { decryptAiSecret } from './ai-secrets.js';
 import type { AiEnrichmentJobPayload, GeneratedStoryJobPayload, IngestionJobPayload, NewsletterJobPayload } from './types.js';
 import { toJobId } from './job-ids.js';
 import { buildPreferenceWeights, mergeSelectedCandidates, rankNewsletterCandidates } from './newsletter-ranking.js';
@@ -196,7 +197,7 @@ const generatedStoryVerificationSchema = z.object({
   unsupportedClaims: z.array(z.string().trim().min(1).max(240)).max(12)
 });
 
-const aiKeys = {
+const envAiKeys = {
   OPENAI_API_KEY: config.OPENAI_API_KEY,
   ANTHROPIC_API_KEY: config.ANTHROPIC_API_KEY,
   OPENROUTER_API_KEY: config.OPENROUTER_API_KEY
@@ -716,6 +717,29 @@ async function getAiConfig() {
   };
 }
 
+async function getAiRuntimeKeys() {
+  const stored = await prisma.aiConfig.findUnique({
+    where: {
+      id: 1
+    },
+    select: {
+      openaiApiKeyCiphertext: true,
+      anthropicApiKeyCiphertext: true,
+      openrouterApiKeyCiphertext: true
+    }
+  });
+  const storedKeys = {
+    OPENAI_API_KEY: decryptAiSecret(stored?.openaiApiKeyCiphertext, config.COOKIE_SECRET),
+    ANTHROPIC_API_KEY: decryptAiSecret(stored?.anthropicApiKeyCiphertext, config.COOKIE_SECRET),
+    OPENROUTER_API_KEY: decryptAiSecret(stored?.openrouterApiKeyCiphertext, config.COOKIE_SECRET)
+  };
+  return {
+    OPENAI_API_KEY: storedKeys.OPENAI_API_KEY || envAiKeys.OPENAI_API_KEY,
+    ANTHROPIC_API_KEY: storedKeys.ANTHROPIC_API_KEY || envAiKeys.ANTHROPIC_API_KEY,
+    OPENROUTER_API_KEY: storedKeys.OPENROUTER_API_KEY || envAiKeys.OPENROUTER_API_KEY
+  };
+}
+
 async function recordSystemError(scope: 'worker' | 'ingestion' | 'email' | 'ai', level: 'error' | 'warn', message: string) {
   await prisma.systemErrorEvent.create({
     data: {
@@ -889,6 +913,7 @@ async function runBudgetedCompletion<T>(input: {
   userId?: string;
   parser?: (text: string) => T;
 }) {
+  const aiKeys = await getAiRuntimeKeys();
   if (!hasProviderKey(input.provider, aiKeys)) {
     await recordUniqueAiWarning(
       `missing-key:${input.provider}`,

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type {
+  AdminAiCredentialStatus,
   AdminAiUsageSummary,
   AiModelConfig,
   AiUsageSnapshot,
@@ -83,6 +84,22 @@ type AlbumDetail = {
   items: ContentItem[];
 };
 
+type ProviderApiKey = AiModelConfig['provider'];
+
+function emptyRuntimeAiKeys() {
+  return {
+    OPENAI_API_KEY: '',
+    ANTHROPIC_API_KEY: '',
+    OPENROUTER_API_KEY: ''
+  };
+}
+
+function providerKeyField(provider: ProviderApiKey): keyof ReturnType<typeof emptyRuntimeAiKeys> {
+  if (provider === 'anthropic') return 'ANTHROPIC_API_KEY';
+  if (provider === 'openrouter') return 'OPENROUTER_API_KEY';
+  return 'OPENAI_API_KEY';
+}
+
 const COMMENT_EDIT_WINDOW_MS = 15 * 60 * 1000;
 
 function subjectToFeed(subject: ContentItem['subject']): SubjectFeed {
@@ -117,6 +134,14 @@ export class DemoStore {
   private aiUsage = structuredClone(DEMO_AI_USAGE);
 
   private users = structuredClone(DEMO_USERS);
+
+  private readonly envAiKeys: {
+    OPENAI_API_KEY: string;
+    ANTHROPIC_API_KEY: string;
+    OPENROUTER_API_KEY: string;
+  };
+
+  private storedAiKeys = emptyRuntimeAiKeys();
 
   private generatedStories: GeneratedStoryDraftDto[] = [];
 
@@ -155,10 +180,23 @@ export class DemoStore {
     ['mila', 'mila@example.com']
   ]);
 
-  constructor(options: { sessionTtlHours: number; modeSwitchTtlMinutes: number; appUrl: string }) {
+  constructor(options: {
+    sessionTtlHours: number;
+    modeSwitchTtlMinutes: number;
+    appUrl: string;
+    aiKeys?: Partial<{
+      OPENAI_API_KEY: string;
+      ANTHROPIC_API_KEY: string;
+      OPENROUTER_API_KEY: string;
+    }>;
+  }) {
     this.sessionTtlMs = options.sessionTtlHours * 60 * 60 * 1000;
     this.modeSwitchTtlMs = options.modeSwitchTtlMinutes * 60 * 1000;
     this.appUrl = options.appUrl.replace(/\/$/, '');
+    this.envAiKeys = {
+      ...emptyRuntimeAiKeys(),
+      ...options.aiKeys
+    };
 
     if (!this.users.find((user) => user.username === 'mila')) {
       this.users.push({
@@ -578,6 +616,18 @@ export class DemoStore {
     };
   }
 
+  getAiConfig() {
+    return this.aiConfig;
+  }
+
+  getAiRuntimeKeys() {
+    return {
+      OPENAI_API_KEY: this.storedAiKeys.OPENAI_API_KEY || this.envAiKeys.OPENAI_API_KEY,
+      ANTHROPIC_API_KEY: this.storedAiKeys.ANTHROPIC_API_KEY || this.envAiKeys.ANTHROPIC_API_KEY,
+      OPENROUTER_API_KEY: this.storedAiKeys.OPENROUTER_API_KEY || this.envAiKeys.OPENROUTER_API_KEY
+    };
+  }
+
   getAdminSnapshot(): AdminSnapshot {
     return {
       sources: this.sources,
@@ -603,6 +653,33 @@ export class DemoStore {
       outputTokens: monthlyUsage.reduce((sum, entry) => sum + entry.outputTokens, 0),
       totalCostUsd: Number(monthlyUsage.reduce((sum, entry) => sum + entry.totalCostUsd, 0).toFixed(4))
     };
+  }
+
+  getAdminAiCredentialStatus(): AdminAiCredentialStatus {
+    const runtimeKeys = this.getAiRuntimeKeys();
+    return {
+      openai: {
+        configured: Boolean(runtimeKeys.OPENAI_API_KEY),
+        source: this.storedAiKeys.OPENAI_API_KEY ? 'database' : this.envAiKeys.OPENAI_API_KEY ? 'environment' : 'none'
+      },
+      anthropic: {
+        configured: Boolean(runtimeKeys.ANTHROPIC_API_KEY),
+        source: this.storedAiKeys.ANTHROPIC_API_KEY ? 'database' : this.envAiKeys.ANTHROPIC_API_KEY ? 'environment' : 'none'
+      },
+      openrouter: {
+        configured: Boolean(runtimeKeys.OPENROUTER_API_KEY),
+        source: this.storedAiKeys.OPENROUTER_API_KEY ? 'database' : this.envAiKeys.OPENROUTER_API_KEY ? 'environment' : 'none'
+      }
+    };
+  }
+
+  setAdminAiProviderKey(provider: ProviderApiKey, apiKey: string | null) {
+    const field = providerKeyField(provider);
+    this.storedAiKeys = {
+      ...this.storedAiKeys,
+      [field]: apiKey?.trim() || ''
+    };
+    return this.getAdminAiCredentialStatus();
   }
 
   listGeneratedStoryDrafts() {

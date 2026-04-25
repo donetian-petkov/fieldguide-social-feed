@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { aiModelConfigSchema, sourceDefinitionSchema, subjectTagSchema, userRoleSchema } from '@edu-feed/shared';
+import { aiModelConfigSchema, aiProviderSchema, sourceDefinitionSchema, subjectTagSchema, userRoleSchema } from '@edu-feed/shared';
 
 import type { AppQueues } from '../lib/queues.js';
 import type { AppStore } from '../lib/store.js';
@@ -51,6 +51,14 @@ const generatedStoryReviewSchema = z.object({
   decision: z.enum(['approved', 'rejected'])
 });
 
+const aiCredentialUpdateSchema = z.object({
+  provider: aiProviderSchema,
+  apiKey: z.string().trim().min(1).optional(),
+  clear: z.boolean().default(false)
+}).refine((value) => value.clear || Boolean(value.apiKey), {
+  message: 'A provider API key is required unless you are clearing the stored key.'
+});
+
 export async function registerAdminRoutes(app: FastifyInstance, options: { store: AppStore; queues: AppQueues }) {
   app.addHook('preHandler', async (request) => {
     if (!request.currentUser || request.currentUser.role !== 'admin') {
@@ -65,6 +73,12 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
   app.get('/v1/admin/usage-summary', async () => {
     return {
       summary: await options.store.getAdminAiUsageSummary()
+    };
+  });
+
+  app.get('/v1/admin/ai/credentials', async () => {
+    return {
+      credentials: await options.store.getAdminAiCredentialStatus()
     };
   });
 
@@ -184,6 +198,13 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
     const parsed = aiModelConfigSchema.partial().parse(request.body || {});
     return {
       config: await options.store.updateAiConfig(parsed)
+    };
+  });
+
+  app.put('/v1/admin/ai/credentials', async (request) => {
+    const parsed = aiCredentialUpdateSchema.parse(request.body || {});
+    return {
+      credentials: await options.store.setAdminAiProviderKey(parsed.provider, parsed.clear ? null : parsed.apiKey || null)
     };
   });
 

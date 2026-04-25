@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import argon2 from 'argon2';
 import { PrismaClient, type Prisma } from '@prisma/client';
 import type {
+  AdminAiCredentialStatus,
   AdminAiUsageSummary,
   AiModelConfig,
   AiUsageSnapshot,
@@ -26,6 +27,7 @@ import type {
 import { DEMO_AI_CONFIG, filterItemsForFeed, resolveTranslation } from '@edu-feed/shared';
 
 import { estimateCostUsd, estimateTokens, fallbackModelForProvider, hasProviderKey, runCompletion } from './ai-runtime.js';
+import { decryptAiSecret, encryptAiSecret } from './ai-secrets.js';
 import type { AdminSnapshot, AppStore, FeedResponse, RegisterInput } from './store.js';
 
 type UserWithSettings = Prisma.UserGetPayload<{
@@ -410,6 +412,8 @@ export class PrismaStore implements AppStore {
 
   private readonly appUrl: string;
 
+  private readonly encryptionSecret: string;
+
   private readonly aiKeys: {
     OPENAI_API_KEY: string;
     ANTHROPIC_API_KEY: string;
@@ -423,6 +427,7 @@ export class PrismaStore implements AppStore {
     options: {
       modeSwitchTtlMinutes: number;
       appUrl: string;
+      encryptionSecret: string;
       aiKeys: {
         OPENAI_API_KEY?: string;
         ANTHROPIC_API_KEY?: string;
@@ -432,6 +437,7 @@ export class PrismaStore implements AppStore {
   ) {
     this.modeSwitchTtlMs = options.modeSwitchTtlMinutes * 60 * 1000;
     this.appUrl = options.appUrl.replace(/\/$/, '');
+    this.encryptionSecret = options.encryptionSecret;
     this.aiKeys = {
       OPENAI_API_KEY: options.aiKeys.OPENAI_API_KEY || '',
       ANTHROPIC_API_KEY: options.aiKeys.ANTHROPIC_API_KEY || '',
@@ -1292,7 +1298,8 @@ export class PrismaStore implements AppStore {
         : `For "${translation?.title}", start with the source context, the central claim, and which museum, archive, or primary materials could deepen the story. Your question was: ${question}`;
     const citations = [item.externalUrl || `${this.appUrl}/item/${item.slug}`];
     const aiConfig = await this.getEffectiveAiConfig();
-    if (!hasProviderKey(aiConfig.provider, this.aiKeys)) {
+    const aiKeys = await this.getAiRuntimeKeys();
+    if (!hasProviderKey(aiConfig.provider, aiKeys)) {
       await this.prisma.systemErrorEvent.create({
         data: {
           scope: 'ai',
@@ -1376,7 +1383,7 @@ export class PrismaStore implements AppStore {
         userPrompt,
         temperature: 0.2,
         maxOutputTokens: estimatedOutput,
-        keys: this.aiKeys
+        keys: aiKeys
       });
       const finalCost = estimateCostUsd(model, completion.inputTokens, completion.outputTokens);
       await this.prisma.aiUsageLedger.create({
@@ -1429,6 +1436,24 @@ export class PrismaStore implements AppStore {
       ok: true as const,
       shareUrl: `${this.appUrl}/item/${item.slug}`
     };
+  }
+
+  async getAiConfig() {
+    return this.getEffectiveAiConfig();
+  }
+
+  async getAiRuntimeKeys() {
+    const row = await this.prisma.aiConfig.findUnique({
+      where: {
+        id: 1
+      },
+      select: {
+        openaiApiKeyCiphertext: true,
+        anthropicApiKeyCiphertext: true,
+        openrouterApiKeyCiphertext: true
+      }
+    });
+    return this.resolveRuntimeAiKeys(row);
   }
 
   async getAdminSnapshot(): Promise<AdminSnapshot> {
@@ -1555,6 +1580,66 @@ export class PrismaStore implements AppStore {
     };
   }
 
+  async getAdminAiCredentialStatus(): Promise<AdminAiCredentialStatus> {
+    const row = await this.prisma.aiConfig.findUnique({
+      where: {
+        id: 1
+      },
+      select: {
+        openaiApiKeyCiphertext: true,
+        anthropicApiKeyCiphertext: true,
+        openrouterApiKeyCiphertext: true
+      }
+    });
+    const runtimeKeys = this.resolveRuntimeAiKeys(row);
+    const storedKeys = this.resolveStoredAiKeys(row);
+
+    return {
+      openai: {
+        configured: Boolean(runtimeKeys.OPENAI_API_KEY),
+        source: storedKeys.OPENAI_API_KEY ? 'database' : this.aiKeys.OPENAI_API_KEY ? 'environment' : 'none'
+      },
+      anthropic: {
+        configured: Boolean(runtimeKeys.ANTHROPIC_API_KEY),
+        source: storedKeys.ANTHROPIC_API_KEY ? 'database' : this.aiKeys.ANTHROPIC_API_KEY ? 'environment' : 'none'
+      },
+      openrouter: {
+        configured: Boolean(runtimeKeys.OPENROUTER_API_KEY),
+        source: storedKeys.OPENROUTER_API_KEY ? 'database' : this.aiKeys.OPENROUTER_API_KEY ? 'environment' : 'none'
+      }
+    };
+  }
+
+  async setAdminAiProviderKey(provider: AiModelConfig['provider'], apiKey: string | null) {
+    const ciphertext = apiKey?.trim() ? encryptAiSecret(apiKey.trim(), this.encryptionSecret) : null;
+    const credentialPatch =
+      provider === 'anthropic'
+        ? { anthropicApiKeyCiphertext: ciphertext }
+        : provider === 'openrouter'
+          ? { openrouterApiKeyCiphertext: ciphertext }
+          : { openaiApiKeyCiphertext: ciphertext };
+    await this.prisma.aiConfig.upsert({
+      where: {
+        id: 1
+      },
+      create: {
+        id: 1,
+        provider: DEMO_AI_CONFIG.provider,
+        summaryModel: DEMO_AI_CONFIG.summaryModel,
+        translationModel: DEMO_AI_CONFIG.translationModel,
+        askModel: DEMO_AI_CONFIG.askModel,
+        newsletterModel: DEMO_AI_CONFIG.newsletterModel,
+        monthlyBudgetUsd: DEMO_AI_CONFIG.monthlyBudgetUsd,
+        perJobBudgetUsd: DEMO_AI_CONFIG.perJobBudgetUsd,
+        autoDowngrade: DEMO_AI_CONFIG.autoDowngrade,
+        pauseOnBudgetExceeded: DEMO_AI_CONFIG.pauseOnBudgetExceeded,
+        ...credentialPatch
+      },
+      update: credentialPatch
+    });
+    return this.getAdminAiCredentialStatus();
+  }
+
   async listGeneratedStoryDrafts() {
     const drafts = await this.prisma.generatedStoryDraft.findMany({
       include: {
@@ -1571,7 +1656,8 @@ export class PrismaStore implements AppStore {
   async requestGeneratedStory(username: string, input: { subject: SubjectTag; prompt: string }) {
     const user = await this.requireUser(username);
     const aiConfig = await this.getEffectiveAiConfig();
-    if (!hasProviderKey(aiConfig.provider, this.aiKeys)) {
+    const aiKeys = await this.getAiRuntimeKeys();
+    if (!hasProviderKey(aiConfig.provider, aiKeys)) {
       await this.prisma.systemErrorEvent.create({
         data: {
           scope: 'ai',
@@ -2365,6 +2451,41 @@ export class PrismaStore implements AppStore {
     });
     if (!user) throw new Error('Account not found.');
     return user;
+  }
+
+  private resolveStoredAiKeys(
+    row:
+      | {
+          openaiApiKeyCiphertext: string | null;
+          anthropicApiKeyCiphertext: string | null;
+          openrouterApiKeyCiphertext: string | null;
+        }
+      | null
+      | undefined
+  ) {
+    return {
+      OPENAI_API_KEY: decryptAiSecret(row?.openaiApiKeyCiphertext, this.encryptionSecret),
+      ANTHROPIC_API_KEY: decryptAiSecret(row?.anthropicApiKeyCiphertext, this.encryptionSecret),
+      OPENROUTER_API_KEY: decryptAiSecret(row?.openrouterApiKeyCiphertext, this.encryptionSecret)
+    };
+  }
+
+  private resolveRuntimeAiKeys(
+    row:
+      | {
+          openaiApiKeyCiphertext: string | null;
+          anthropicApiKeyCiphertext: string | null;
+          openrouterApiKeyCiphertext: string | null;
+        }
+      | null
+      | undefined
+  ) {
+    const storedKeys = this.resolveStoredAiKeys(row);
+    return {
+      OPENAI_API_KEY: storedKeys.OPENAI_API_KEY || this.aiKeys.OPENAI_API_KEY,
+      ANTHROPIC_API_KEY: storedKeys.ANTHROPIC_API_KEY || this.aiKeys.ANTHROPIC_API_KEY,
+      OPENROUTER_API_KEY: storedKeys.OPENROUTER_API_KEY || this.aiKeys.OPENROUTER_API_KEY
+    };
   }
 
   private async getEffectiveAiConfig() {

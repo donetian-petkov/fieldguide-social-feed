@@ -40,6 +40,7 @@ export const sourceTypeSchema = z.enum(['editorial', 'community', 'adult_educati
 export const submissionStatusSchema = z.enum(['pending', 'approved', 'rejected']);
 export const generatedStoryStatusSchema = z.enum(['queued', 'draft', 'approved', 'rejected', 'failed']);
 export const newsletterCadenceSchema = z.enum(['daily', 'weekly']);
+export const aiCredentialSourceSchema = z.enum(['none', 'environment', 'database']);
 
 export const subjectFeedSchema = z.enum([
   'history',
@@ -268,6 +269,17 @@ export const adminAiUsageSummarySchema = z.object({
   totalCostUsd: z.number().nonnegative()
 });
 
+export const aiCredentialStateSchema = z.object({
+  configured: z.boolean(),
+  source: aiCredentialSourceSchema
+});
+
+export const adminAiCredentialStatusSchema = z.object({
+  openai: aiCredentialStateSchema,
+  anthropic: aiCredentialStateSchema,
+  openrouter: aiCredentialStateSchema
+});
+
 export const submissionDtoSchema = z.object({
   id: z.string(),
   type: z.enum(['link', 'community_post']),
@@ -340,6 +352,7 @@ export type AIProvider = z.infer<typeof aiProviderSchema>;
 export type AIBudgetMode = z.infer<typeof aiBudgetModeSchema>;
 export type NewsletterCadence = z.infer<typeof newsletterCadenceSchema>;
 export type GeneratedStoryStatus = z.infer<typeof generatedStoryStatusSchema>;
+export type AiCredentialSource = z.infer<typeof aiCredentialSourceSchema>;
 export type SubjectFeed = z.infer<typeof subjectFeedSchema>;
 export type SourceDefinition = z.infer<typeof sourceDefinitionSchema>;
 export type ContentTag = z.infer<typeof contentTagSchema>;
@@ -355,6 +368,8 @@ export type ModeSwitchResult = z.infer<typeof modeSwitchResultSchema>;
 export type AiModelConfig = z.infer<typeof aiModelConfigSchema>;
 export type AiUsageSnapshot = z.infer<typeof aiUsageSnapshotSchema>;
 export type AdminAiUsageSummary = z.infer<typeof adminAiUsageSummarySchema>;
+export type AiCredentialState = z.infer<typeof aiCredentialStateSchema>;
+export type AdminAiCredentialStatus = z.infer<typeof adminAiCredentialStatusSchema>;
 export type SubmissionDto = z.infer<typeof submissionDtoSchema>;
 export type GeneratedStoryCitation = z.infer<typeof generatedStoryCitationSchema>;
 export type GeneratedStoryVerification = z.infer<typeof generatedStoryVerificationSchema>;

@@ -9,6 +9,7 @@ const cwdEnvPath = path.resolve(process.cwd(), '.env');
 const repoManagedEnvKeys = [
   'NODE_ENV',
   'APP_URL',
+  'COOKIE_SECRET',
   'REDIS_URL',
   'DATABASE_URL',
   'DEMO_MODE',
@@ -54,6 +55,7 @@ if (cwdEnvPath !== repoRootEnvPath) {
 const workerEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   APP_URL: z.string().url().default('http://localhost:3000'),
+  COOKIE_SECRET: z.string().min(16).default('replace-with-a-long-random-string'),
   REDIS_URL: z.string().min(1).default('redis://127.0.0.1:6379'),
   DATABASE_URL: z.string().min(1),
   DEMO_MODE: z

@@ -410,6 +410,9 @@ model AiConfig {
   perJobBudgetUsd       Decimal  @db.Decimal(10, 2)
   autoDowngrade         Boolean  @default(true)
   pauseOnBudgetExceeded Boolean  @default(false)
+  openaiApiKeyCiphertext    String? @db.LongText
+  anthropicApiKeyCiphertext String? @db.LongText
+  openrouterApiKeyCiphertext String? @db.LongText
   updatedAt             DateTime @updatedAt
 }
 

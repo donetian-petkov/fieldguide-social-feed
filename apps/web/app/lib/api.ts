@@ -3,6 +3,7 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 
 import type {
+  AdminAiCredentialStatus,
   AdminAiUsageSummary,
   AiModelConfig,
   AiUsageSnapshot,
@@ -64,6 +65,10 @@ type AdminDashboardResponse = {
 
 type AdminUsageSummaryResponse = {
   summary: AdminAiUsageSummary;
+};
+
+type AdminAiCredentialsResponse = {
+  credentials: AdminAiCredentialStatus;
 };
 
 type AuthBody = {
@@ -164,6 +169,10 @@ export const fieldguideApi = createApi({
       query: () => '/v1/admin/usage-summary',
       providesTags: ['Admin']
     }),
+    adminAiCredentials: builder.query<AdminAiCredentialsResponse, void>({
+      query: () => '/v1/admin/ai/credentials',
+      providesTags: ['Admin']
+    }),
     addSource: builder.mutation<{ source: SourceDefinition }, Omit<SourceDefinition, 'id'>>({
       query: (body) => ({
         url: '/v1/admin/sources',
@@ -197,6 +206,17 @@ export const fieldguideApi = createApi({
     updateAiConfig: builder.mutation<{ config: AiModelConfig }, Partial<AiModelConfig>>({
       query: (body) => ({
         url: '/v1/admin/ai/config',
+        method: 'PUT',
+        body
+      }),
+      invalidatesTags: ['Admin', 'Health']
+    }),
+    updateAdminAiCredential: builder.mutation<
+      AdminAiCredentialsResponse,
+      { provider: AiModelConfig['provider']; apiKey?: string; clear?: boolean }
+    >({
+      query: (body) => ({
+        url: '/v1/admin/ai/credentials',
         method: 'PUT',
         body
       }),
@@ -410,6 +430,7 @@ export const fieldguideApi = createApi({
 });
 
 export const {
+  useAdminAiCredentialsQuery,
   useAdminDashboardQuery,
   useAdminUsageSummaryQuery,
   useAddAlbumItemMutation,
@@ -450,6 +471,7 @@ export const {
   useSwitchContentModeMutation,
   useUpdateAlbumMutation,
   useUpdateAiConfigMutation,
+  useUpdateAdminAiCredentialMutation,
   useUpdateCommentMutation,
   useUpdateSourceMutation,
   useUpdateSettingsMutation,
