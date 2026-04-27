@@ -35,6 +35,7 @@ import { useAdminUsageSummaryQuery, useLogoutMutation, useRuntimeHealthQuery } f
 import { ADMIN_NAV_ITEMS, isAdminNavActive } from '../lib/admin-nav';
 import { FEED_ORDER, normalizeFeedSegment } from '../lib/demo';
 import { useSessionViewer } from '../lib/session';
+import { RuntimeActivityBeacon } from './RuntimeActivityBeacon';
 
 const DRAWER_WIDTH = 280;
 
@@ -65,8 +66,8 @@ function formatCompactNumber(value: number) {
   return String(value);
 }
 
-function formatUsageCost(value: number) {
-  return `$${value.toFixed(value >= 10 ? 0 : 2)}`;
+function formatUsageCost(value: number, estimated = false) {
+  return `${estimated ? 'Est. ' : ''}$${value.toFixed(value >= 10 ? 0 : 2)}`;
 }
 
 export function AppShell({
@@ -267,6 +268,7 @@ export function AppShell({
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+      <RuntimeActivityBeacon />
       <AppBar position="fixed" elevation={0} color="transparent" sx={{ backdropFilter: 'blur(12px)', borderBottom: '1px solid', borderColor: 'divider' }}>
         <Toolbar sx={{ gap: 2 }}>
           <IconButton edge="start" aria-label="Open navigation menu" onClick={() => setDrawerOpen(true)}>
@@ -282,11 +284,15 @@ export function AppShell({
           </Stack>
           {isAdminViewer ? (
             <Box
+              component={Link}
+              href="/admin/usage"
               sx={{
                 display: {
                   xs: 'none',
                   md: 'block'
                 },
+                textDecoration: 'none',
+                color: 'inherit',
                 px: 1.5,
                 py: 0.75,
                 border: '1px solid',
@@ -297,11 +303,11 @@ export function AppShell({
               }}
             >
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.15 }}>
-                Tokens this month
+                Estimated AI usage this month
               </Typography>
               <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
                 {adminUsageSummary
-                  ? `${formatCompactNumber(adminUsageSummary.inputTokens)} in • ${formatCompactNumber(adminUsageSummary.outputTokens)} out • ${formatUsageCost(adminUsageSummary.totalCostUsd)}`
+                  ? `${formatCompactNumber(adminUsageSummary.inputTokens)} in • ${formatCompactNumber(adminUsageSummary.outputTokens)} out • ${formatUsageCost(adminUsageSummary.totalCostUsd, adminUsageSummary.estimated)}`
                   : adminUsageSummaryQuery.isError
                     ? 'Usage unavailable'
                     : 'Loading...'}

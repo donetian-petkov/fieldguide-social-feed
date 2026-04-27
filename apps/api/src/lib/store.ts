@@ -1,5 +1,6 @@
 import type {
   AdminAiCredentialStatus,
+  AdminAiUsageBreakdown,
   AdminAiUsageSummary,
   AiModelConfig,
   AiUsageSnapshot,
@@ -126,6 +127,7 @@ export interface AppStore {
   getAiRuntimeKeys(): StoreResult<RuntimeAiKeys>;
   getAdminSnapshot(): StoreResult<AdminSnapshot>;
   getAdminAiUsageSummary(): StoreResult<AdminAiUsageSummary>;
+  getAdminAiUsageBreakdown(): StoreResult<AdminAiUsageBreakdown>;
   getAdminAiCredentialStatus(): StoreResult<AdminAiCredentialStatus>;
   setAdminAiProviderKey(provider: AiModelConfig['provider'], apiKey: string | null): StoreResult<AdminAiCredentialStatus>;
   listGeneratedStoryDrafts(): StoreResult<GeneratedStoryDraftDto[]>;

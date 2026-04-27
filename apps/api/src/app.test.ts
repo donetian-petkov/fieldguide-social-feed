@@ -305,6 +305,16 @@ test('admin routes reject non-admin users and schedule new sources for ingestion
 
     assert.equal(usageForbidden.statusCode, 403);
 
+    const breakdownForbidden = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/usage-breakdown',
+      headers: {
+        cookie: userCookie
+      }
+    });
+
+    assert.equal(breakdownForbidden.statusCode, 403);
+
     const adminCookie = await login(app, 'admin', 'fieldguide123');
     const usageResponse = await app.inject({
       method: 'GET',
@@ -316,6 +326,19 @@ test('admin routes reject non-admin users and schedule new sources for ingestion
 
     assert.equal(usageResponse.statusCode, 200);
     assert.deepEqual(usageResponse.json().summary, store.getAdminAiUsageSummary());
+    assert.equal(usageResponse.json().summary.estimated, true);
+    assert.equal(usageResponse.json().summary.pricingBasis, 'static_model_pricing');
+
+    const breakdownResponse = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/usage-breakdown',
+      headers: {
+        cookie: adminCookie
+      }
+    });
+
+    assert.equal(breakdownResponse.statusCode, 200);
+    assert.deepEqual(breakdownResponse.json().breakdown, store.getAdminAiUsageBreakdown());
 
     const response = await app.inject({
       method: 'POST',

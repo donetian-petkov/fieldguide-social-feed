@@ -31,6 +31,11 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     description: 'Provider, models, budgets, and draft generation'
   },
   {
+    href: '/admin/usage',
+    label: 'Usage',
+    description: 'Token, cost, purpose, and model breakdown charts'
+  },
+  {
     href: '/admin/logs',
     label: 'Logs',
     description: 'Review backend and integration failures'

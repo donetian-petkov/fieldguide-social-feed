@@ -80,6 +80,8 @@ Use `localhost` consistently for the web and API while testing auth. Browser coo
 
 `npm run dev` and `npm run start` now supervise the full stack. In database mode they bring up `docker compose` automatically, start API/worker/web together, and run `docker compose down` when you stop with `Ctrl+C`, `SIGTERM`, `SIGHUP`, or by closing the terminal. In `DEMO_MODE=true`, the same runner skips Docker entirely.
 
+The supervisor can also auto-shutdown the stack after user inactivity. Set `AUTO_SHUTDOWN_ENABLED=true` and adjust `AUTO_SHUTDOWN_IDLE_HOURS` in `.env`. Activity is driven by real browser interaction beacons, not background polling.
+
 For repo-managed runtime settings, `/Users/donetianpetkov/feed/.env` is the source of truth. Inherited shell variables like `OPENAI_API_KEY` are cleared for this project unless they are explicitly present in the repo `.env`.
 
 The default database seed creates local accounts, the source registry, and AI config only. Set `SEED_USER_PASSWORD` in `.env` before running `npm run seed`; the admin username is `admin`. The source registry is also bootstrapped automatically by the API and worker at startup. It does not insert bundled fixture articles.
@@ -142,7 +144,7 @@ The capture script starts the built API and web app in fixture mode, logs in as 
 ## Main Routes
 
 - App: `/`, `/feed/[subject]`, `/item/[slug]`, `/saved`, `/albums/[id]`, `/community`, `/profile/[username]`, `/settings`.
-- Admin: `/admin`, `/admin/sources`, `/admin/moderation`, `/admin/users`, `/admin/ai`, `/admin/logs`.
+- Admin: `/admin`, `/admin/sources`, `/admin/moderation`, `/admin/users`, `/admin/ai`, `/admin/usage`, `/admin/logs`.
 - API: `/v1/auth/*`, `/v1/me`, `/v1/feed`, `/v1/items/:id`, `/v1/albums`, `/v1/submissions`, `/v1/admin/*`, `/v1/admin/generated-stories`.
 
 ## Notes

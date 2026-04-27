@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, existsSync, statSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,6 +35,9 @@ const repoManagedEnvKeys = [
   'SEED_USER_PASSWORD',
   'SEED_DEMO_CONTENT',
   'NEXT_PUBLIC_API_URL',
+  'AUTO_SHUTDOWN_ENABLED',
+  'AUTO_SHUTDOWN_IDLE_HOURS',
+  'STACK_ACTIVITY_FILE',
   'NEXT_PUBLIC_DEMO_FALLBACK',
   'NEXT_PUBLIC_ENABLE_DEMO_FALLBACK'
 ];
@@ -52,6 +55,7 @@ const servicesByMode = {
 };
 const children = [];
 let shuttingDown = false;
+let autoShutdownInterval = null;
 
 function parseEnvFile(filePath) {
   if (!existsSync(filePath)) return {};
@@ -87,6 +91,13 @@ function buildManagedEnv(baseEnv, ...layers) {
 
 const env = buildManagedEnv(process.env, parseEnvFile(rootEnvPath));
 const shouldManageDocker = env.DEMO_MODE !== 'true';
+const runtimeDir = path.join(rootDir, '.runtime');
+const activityFile = env.STACK_ACTIVITY_FILE || path.join(runtimeDir, 'stack-activity.json');
+const autoShutdownEnabled = env.AUTO_SHUTDOWN_ENABLED !== 'false';
+const autoShutdownIdleHours = Number(env.AUTO_SHUTDOWN_IDLE_HOURS || '4');
+const autoShutdownIdleMs =
+  Number.isFinite(autoShutdownIdleHours) && autoShutdownIdleHours > 0 ? autoShutdownIdleHours * 60 * 60 * 1000 : 0;
+env.STACK_ACTIVITY_FILE = activityFile;
 env.PATH = [
   path.join(rootDir, 'node_modules', '.bin'),
   env.PATH
@@ -99,6 +110,40 @@ if (!['dev', 'start'].includes(mode)) {
 
 function log(message) {
   console.log(`[stack] ${message}`);
+}
+
+function writeActivityFile() {
+  mkdirSync(path.dirname(activityFile), { recursive: true });
+  writeFileSync(activityFile, JSON.stringify({ updatedAt: new Date().toISOString() }), 'utf8');
+}
+
+function activityAgeMs() {
+  try {
+    return Date.now() - statSync(activityFile).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+function startAutoShutdownMonitor() {
+  if (!autoShutdownEnabled || autoShutdownIdleMs <= 0) {
+    log('Idle auto-shutdown disabled.');
+    return;
+  }
+
+  writeActivityFile();
+  log(`Idle auto-shutdown armed for ${autoShutdownIdleHours} hour(s) without user activity.`);
+  autoShutdownInterval = setInterval(() => {
+    if (shuttingDown) {
+      return;
+    }
+    if (activityAgeMs() < autoShutdownIdleMs) {
+      return;
+    }
+    log(`No recorded user activity for ${autoShutdownIdleHours} hour(s); shutting the stack down.`);
+    void cleanup(0);
+  }, 60_000);
+  autoShutdownInterval.unref?.();
 }
 
 function resolveCommand(command) {
@@ -147,6 +192,10 @@ function killChildTree(child, signal) {
 async function cleanup(exitCode) {
   if (shuttingDown) return;
   shuttingDown = true;
+  if (autoShutdownInterval) {
+    clearInterval(autoShutdownInterval);
+    autoShutdownInterval = null;
+  }
 
   log('Stopping services...');
   for (const child of children) {
@@ -192,6 +241,7 @@ function spawnService(service) {
 }
 
 async function main() {
+  startAutoShutdownMonitor();
   if (shouldManageDocker) {
     log('Starting Docker dependencies...');
     await runCommand('docker', ['compose', 'up', '-d', '--wait'], 'docker compose up -d --wait');

@@ -18,6 +18,7 @@ import { registerFeedRoutes } from './routes/feed.js';
 import { registerItemRoutes } from './routes/items.js';
 import { registerMediaRoutes } from './routes/media.js';
 import { registerMeRoutes } from './routes/me.js';
+import { registerRuntimeRoutes } from './routes/runtime.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -92,6 +93,7 @@ export async function buildApp(options?: {
     ...(await resolveAiCapabilities(store))
   }));
 
+  await registerRuntimeRoutes(app);
   await registerMediaRoutes(app);
   await registerAuthRoutes(app, { store, config });
   await registerFeedRoutes(app, { store });

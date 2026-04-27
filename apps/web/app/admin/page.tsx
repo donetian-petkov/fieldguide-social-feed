@@ -50,6 +50,14 @@ export default function AdminPage() {
       cta: 'Open AI controls'
     },
     {
+      title: 'Usage',
+      eyebrow: 'Token and cost charts',
+      metric: 'Charts',
+      description: 'Review monthly token usage, estimated cost, purposes, and model mix in one place.',
+      href: '/admin/usage',
+      cta: 'Open usage'
+    },
+    {
       title: 'Logs',
       eyebrow: 'Backend only',
       metric: `${model.errorLogs.length}`,

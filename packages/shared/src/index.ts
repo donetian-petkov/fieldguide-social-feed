@@ -266,7 +266,49 @@ export const adminAiUsageSummarySchema = z.object({
   startsAt: z.string(),
   inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
-  totalCostUsd: z.number().nonnegative()
+  totalCostUsd: z.number().nonnegative(),
+  recordedCostUsd: z.number().nonnegative(),
+  estimated: z.boolean(),
+  pricingBasis: z.enum(['static_model_pricing']),
+  pricingTableVersion: z.string(),
+  pricingConfidence: z.enum(['exact', 'mixed', 'fallback']),
+  fallbackModels: z.array(z.string()),
+  usesProviderReportedCost: z.boolean(),
+  lineItems: z.array(
+    z.object({
+      model: z.string(),
+      pricedAsModel: z.string(),
+      exactModelMatch: z.boolean(),
+      inputTokens: z.number().int().nonnegative(),
+      outputTokens: z.number().int().nonnegative(),
+      totalCostUsd: z.number().nonnegative()
+    })
+  )
+});
+
+export const adminAiUsageBreakdownSchema = z.object({
+  window: z.enum(['monthly']),
+  startsAt: z.string(),
+  totals: adminAiUsageSummarySchema,
+  byDay: z.array(
+    z.object({
+      date: z.string(),
+      label: z.string(),
+      inputTokens: z.number().int().nonnegative(),
+      outputTokens: z.number().int().nonnegative(),
+      totalCostUsd: z.number().nonnegative()
+    })
+  ),
+  byPurpose: z.array(
+    z.object({
+      purpose: aiUsageSnapshotSchema.shape.purpose,
+      label: z.string(),
+      inputTokens: z.number().int().nonnegative(),
+      outputTokens: z.number().int().nonnegative(),
+      totalCostUsd: z.number().nonnegative()
+    })
+  ),
+  byModel: adminAiUsageSummarySchema.shape.lineItems
 });
 
 export const aiCredentialStateSchema = z.object({
@@ -368,6 +410,7 @@ export type ModeSwitchResult = z.infer<typeof modeSwitchResultSchema>;
 export type AiModelConfig = z.infer<typeof aiModelConfigSchema>;
 export type AiUsageSnapshot = z.infer<typeof aiUsageSnapshotSchema>;
 export type AdminAiUsageSummary = z.infer<typeof adminAiUsageSummarySchema>;
+export type AdminAiUsageBreakdown = z.infer<typeof adminAiUsageBreakdownSchema>;
 export type AiCredentialState = z.infer<typeof aiCredentialStateSchema>;
 export type AdminAiCredentialStatus = z.infer<typeof adminAiCredentialStatusSchema>;
 export type SubmissionDto = z.infer<typeof submissionDtoSchema>;

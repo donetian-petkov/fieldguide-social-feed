@@ -5,6 +5,7 @@ import { PrismaClient, type Prisma } from '@prisma/client';
 import { z } from 'zod';
 import type {
   AdminAiCredentialStatus,
+  AdminAiUsageBreakdown,
   AdminAiUsageSummary,
   AiModelConfig,
   AiUsageSnapshot,
@@ -27,7 +28,16 @@ import type {
 } from '@edu-feed/shared';
 import { DEMO_AI_CONFIG, filterItemsForFeed, resolveTranslation } from '@edu-feed/shared';
 
-import { estimateCostUsd, estimateTokens, fallbackModelForProvider, hasProviderKey, parseJsonCompletion, runCompletion } from './ai-runtime.js';
+import {
+  estimateCostUsd,
+  estimateTokens,
+  fallbackModelForProvider,
+  hasProviderKey,
+  parseJsonCompletion,
+  PRICING_TABLE_VERSION,
+  resolveModelPricing,
+  runCompletion
+} from './ai-runtime.js';
 import { rankRelatedItems } from './related-items.js';
 import { decryptAiSecret, encryptAiSecret } from './ai-secrets.js';
 import type { AdminSnapshot, AppStore, FeedResponse, RegisterInput } from './store.js';
@@ -342,6 +352,134 @@ function buildItemDto(item: ItemWithRelations, appUrl: string): ContentItem {
         createdAt: item.classificationAiGeneratedAt
       })
     }
+  };
+}
+
+function buildAiUsageSummary(entries: Array<{
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  recordedCostUsd: number;
+}>, startsAt: Date): AdminAiUsageSummary {
+  const grouped = new Map<string, {
+    inputTokens: number;
+    outputTokens: number;
+    recordedCostUsd: number;
+  }>();
+
+  for (const entry of entries) {
+    const current = grouped.get(entry.model) || {
+      inputTokens: 0,
+      outputTokens: 0,
+      recordedCostUsd: 0
+    };
+    current.inputTokens += entry.inputTokens;
+    current.outputTokens += entry.outputTokens;
+    current.recordedCostUsd += entry.recordedCostUsd;
+    grouped.set(entry.model, current);
+  }
+
+  const lineItems = [...grouped.entries()]
+    .map(([model, totals]) => {
+      const pricing = resolveModelPricing(model);
+      return {
+        model,
+        pricedAsModel: pricing.canonicalModel,
+        exactModelMatch: pricing.exact,
+        inputTokens: totals.inputTokens,
+        outputTokens: totals.outputTokens,
+        totalCostUsd: estimateCostUsd(model, totals.inputTokens, totals.outputTokens),
+        recordedCostUsd: Number(totals.recordedCostUsd.toFixed(6))
+      };
+    })
+    .sort((left, right) => right.totalCostUsd - left.totalCostUsd || left.model.localeCompare(right.model));
+
+  const inputTokens = lineItems.reduce((sum, entry) => sum + entry.inputTokens, 0);
+  const outputTokens = lineItems.reduce((sum, entry) => sum + entry.outputTokens, 0);
+  const totalCostUsd = Number(lineItems.reduce((sum, entry) => sum + entry.totalCostUsd, 0).toFixed(6));
+  const recordedCostUsd = Number(lineItems.reduce((sum, entry) => sum + entry.recordedCostUsd, 0).toFixed(6));
+  const fallbackModels = [...new Set(lineItems.filter((entry) => !entry.exactModelMatch).map((entry) => entry.model))];
+  const exactMatchCount = lineItems.filter((entry) => entry.exactModelMatch).length;
+  const pricingConfidence =
+    lineItems.length === 0 || exactMatchCount === lineItems.length
+      ? 'exact'
+      : exactMatchCount === 0
+        ? 'fallback'
+        : 'mixed';
+
+  return {
+    window: 'monthly',
+    startsAt: startsAt.toISOString(),
+    inputTokens,
+    outputTokens,
+    totalCostUsd,
+    recordedCostUsd,
+    estimated: true,
+    pricingBasis: 'static_model_pricing',
+    pricingTableVersion: PRICING_TABLE_VERSION,
+    pricingConfidence,
+    fallbackModels,
+    usesProviderReportedCost: false,
+    lineItems: lineItems.map(({ recordedCostUsd: _recordedCostUsd, ...entry }) => entry)
+  };
+}
+
+function usagePurposeLabel(purpose: AiUsageSnapshot['purpose']) {
+  if (purpose === 'generated_story') return 'Generated stories';
+  if (purpose === 'generated_story_verification') return 'Story verification';
+  return purpose.charAt(0).toUpperCase() + purpose.slice(1).replace(/_/g, ' ');
+}
+
+function buildAiUsageBreakdown(entries: Array<{
+  createdAt: Date;
+  purpose: AiUsageSnapshot['purpose'];
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  recordedCostUsd: number;
+}>, startsAt: Date): AdminAiUsageBreakdown {
+  const totals = buildAiUsageSummary(entries, startsAt);
+  const byDay = new Map<string, { inputTokens: number; outputTokens: number; totalCostUsd: number }>();
+  const byPurpose = new Map<AiUsageSnapshot['purpose'], { inputTokens: number; outputTokens: number; totalCostUsd: number }>();
+
+  for (const entry of entries) {
+    const date = entry.createdAt.toISOString().slice(0, 10);
+    const dayTotals = byDay.get(date) || { inputTokens: 0, outputTokens: 0, totalCostUsd: 0 };
+    dayTotals.inputTokens += entry.inputTokens;
+    dayTotals.outputTokens += entry.outputTokens;
+    dayTotals.totalCostUsd += estimateCostUsd(entry.model, entry.inputTokens, entry.outputTokens);
+    byDay.set(date, dayTotals);
+
+    const purposeTotals = byPurpose.get(entry.purpose) || { inputTokens: 0, outputTokens: 0, totalCostUsd: 0 };
+    purposeTotals.inputTokens += entry.inputTokens;
+    purposeTotals.outputTokens += entry.outputTokens;
+    purposeTotals.totalCostUsd += estimateCostUsd(entry.model, entry.inputTokens, entry.outputTokens);
+    byPurpose.set(entry.purpose, purposeTotals);
+  }
+
+  return {
+    window: 'monthly',
+    startsAt: startsAt.toISOString(),
+    totals,
+    byDay: [...byDay.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([date, totalsForDay]) => ({
+        date,
+        label: date.slice(5),
+        inputTokens: totalsForDay.inputTokens,
+        outputTokens: totalsForDay.outputTokens,
+        totalCostUsd: Number(totalsForDay.totalCostUsd.toFixed(6))
+      })),
+    byPurpose: [...byPurpose.entries()]
+      .map(([purpose, totalsForPurpose]) => ({
+        purpose,
+        label: usagePurposeLabel(purpose),
+        inputTokens: totalsForPurpose.inputTokens,
+        outputTokens: totalsForPurpose.outputTokens,
+        totalCostUsd: Number(totalsForPurpose.totalCostUsd.toFixed(6))
+      }))
+      .sort((left, right) => right.totalCostUsd - left.totalCostUsd || left.label.localeCompare(right.label)),
+    byModel: totals.lineItems
   };
 }
 
@@ -1694,8 +1832,9 @@ export class PrismaStore implements AppStore {
   async getAdminAiUsageSummary(): Promise<AdminAiUsageSummary> {
     const now = new Date();
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-    const aggregate = await this.prisma.aiUsageLedger.aggregate({
-      _sum: {
+    const usage = await this.prisma.aiUsageLedger.findMany({
+      select: {
+        model: true,
         inputTokens: true,
         outputTokens: true,
         totalCostUsd: true
@@ -1707,13 +1846,50 @@ export class PrismaStore implements AppStore {
       }
     });
 
-    return {
-      window: 'monthly',
-      startsAt: monthStart.toISOString(),
-      inputTokens: aggregate._sum.inputTokens || 0,
-      outputTokens: aggregate._sum.outputTokens || 0,
-      totalCostUsd: Number(aggregate._sum.totalCostUsd || 0)
-    };
+    return buildAiUsageSummary(
+      usage.map((entry) => ({
+        model: entry.model,
+        inputTokens: entry.inputTokens,
+        outputTokens: entry.outputTokens,
+        recordedCostUsd: Number(entry.totalCostUsd)
+      })),
+      monthStart
+    );
+  }
+
+  async getAdminAiUsageBreakdown(): Promise<AdminAiUsageBreakdown> {
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const usage = await this.prisma.aiUsageLedger.findMany({
+      select: {
+        createdAt: true,
+        purpose: true,
+        model: true,
+        inputTokens: true,
+        outputTokens: true,
+        totalCostUsd: true
+      },
+      where: {
+        createdAt: {
+          gte: monthStart
+        }
+      },
+      orderBy: {
+        createdAt: 'asc'
+      }
+    });
+
+    return buildAiUsageBreakdown(
+      usage.map((entry) => ({
+        createdAt: entry.createdAt,
+        purpose: entry.purpose as AiUsageSnapshot['purpose'],
+        model: entry.model,
+        inputTokens: entry.inputTokens,
+        outputTokens: entry.outputTokens,
+        recordedCostUsd: Number(entry.totalCostUsd)
+      })),
+      monthStart
+    );
   }
 
   async getAdminAiCredentialStatus(): Promise<AdminAiCredentialStatus> {

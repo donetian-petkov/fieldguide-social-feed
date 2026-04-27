@@ -76,6 +76,12 @@ export async function registerAdminRoutes(app: FastifyInstance, options: { store
     };
   });
 
+  app.get('/v1/admin/usage-breakdown', async () => {
+    return {
+      breakdown: await options.store.getAdminAiUsageBreakdown()
+    };
+  });
+
   app.get('/v1/admin/ai/credentials', async () => {
     return {
       credentials: await options.store.getAdminAiCredentialStatus()

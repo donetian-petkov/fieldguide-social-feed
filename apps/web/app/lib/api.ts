@@ -4,6 +4,7 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 
 import type {
   AdminAiCredentialStatus,
+  AdminAiUsageBreakdown,
   AdminAiUsageSummary,
   AiModelConfig,
   AiUsageSnapshot,
@@ -67,6 +68,10 @@ type AdminDashboardResponse = {
 
 type AdminUsageSummaryResponse = {
   summary: AdminAiUsageSummary;
+};
+
+type AdminUsageBreakdownResponse = {
+  breakdown: AdminAiUsageBreakdown;
 };
 
 type AdminAiCredentialsResponse = {
@@ -169,6 +174,10 @@ export const fieldguideApi = createApi({
     }),
     adminUsageSummary: builder.query<AdminUsageSummaryResponse, void>({
       query: () => '/v1/admin/usage-summary',
+      providesTags: ['Admin']
+    }),
+    adminUsageBreakdown: builder.query<AdminUsageBreakdownResponse, void>({
+      query: () => '/v1/admin/usage-breakdown',
       providesTags: ['Admin']
     }),
     adminAiCredentials: builder.query<AdminAiCredentialsResponse, void>({
@@ -434,6 +443,7 @@ export const fieldguideApi = createApi({
 export const {
   useAdminAiCredentialsQuery,
   useAdminDashboardQuery,
+  useAdminUsageBreakdownQuery,
   useAdminUsageSummaryQuery,
   useAddAlbumItemMutation,
   useAlbumQuery,

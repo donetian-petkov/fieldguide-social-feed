@@ -29,6 +29,11 @@ type Pricing = {
   outputPer1M: number;
 };
 
+type PricingEntry = Pricing & {
+  canonicalModel: string;
+  aliases: string[];
+};
+
 type OpenAiCompatibleResponse = {
   choices?: Array<{
     message?: {
@@ -41,13 +46,64 @@ type OpenAiCompatibleResponse = {
   };
 };
 
-const MODEL_PRICING_USD: Record<string, Pricing> = {
-  'gpt-4.1-mini': { inputPer1M: 0.4, outputPer1M: 1.6 },
-  'gpt-4o-mini': { inputPer1M: 0.15, outputPer1M: 0.6 },
-  'claude-3-5-haiku-latest': { inputPer1M: 0.8, outputPer1M: 4 },
-  'anthropic/claude-3.5-haiku': { inputPer1M: 0.8, outputPer1M: 4 },
-  'openai/gpt-4o-mini': { inputPer1M: 0.15, outputPer1M: 0.6 }
+export const PRICING_TABLE_VERSION = '2026-04-24';
+
+const MODEL_PRICING_USD: PricingEntry[] = [
+  {
+    canonicalModel: 'gpt-4.1-mini',
+    aliases: ['gpt-4.1-mini', 'gpt-4.1-mini-2025-04-14', 'openai/gpt-4.1-mini'],
+    inputPer1M: 0.4,
+    outputPer1M: 1.6
+  },
+  {
+    canonicalModel: 'gpt-4.1',
+    aliases: ['gpt-4.1', 'gpt-4.1-2025-04-14', 'openai/gpt-4.1'],
+    inputPer1M: 2,
+    outputPer1M: 8
+  },
+  {
+    canonicalModel: 'gpt-4o-mini',
+    aliases: ['gpt-4o-mini', 'gpt-4o-mini-2024-07-18', 'openai/gpt-4o-mini'],
+    inputPer1M: 0.15,
+    outputPer1M: 0.6
+  },
+  {
+    canonicalModel: 'claude-3-5-haiku-latest',
+    aliases: ['claude-3-5-haiku-latest', 'anthropic/claude-3.5-haiku', 'claude-3-5-haiku-20241022'],
+    inputPer1M: 0.8,
+    outputPer1M: 4
+  }
+];
+
+export type ModelPricingResolution = {
+  canonicalModel: string;
+  inputPer1M: number;
+  outputPer1M: number;
+  exact: boolean;
 };
+
+export function resolveModelPricing(model: string): ModelPricingResolution {
+  const normalized = clean(model).toLowerCase();
+  const exact = MODEL_PRICING_USD.find((entry) =>
+    entry.aliases.some((alias) => alias.toLowerCase() === normalized || normalized.startsWith(`${alias.toLowerCase()}-`))
+  );
+  if (exact) {
+    return {
+      canonicalModel: exact.canonicalModel,
+      inputPer1M: exact.inputPer1M,
+      outputPer1M: exact.outputPer1M,
+      exact: true
+    };
+  }
+
+  const fallback = MODEL_PRICING_USD.find((entry) => entry.canonicalModel === 'gpt-4.1-mini');
+  return {
+    canonicalModel: fallback?.canonicalModel || 'gpt-4.1-mini',
+    inputPer1M: fallback?.inputPer1M || 0.4,
+    outputPer1M: fallback?.outputPer1M || 1.6,
+    exact: false
+  };
+}
 
 function clean(text?: string | null) {
   return (text || '').trim();
@@ -81,8 +137,7 @@ export function estimateTokens(text: string) {
 }
 
 export function estimateCostUsd(model: string, inputTokens: number, outputTokens: number) {
-  const pricing = MODEL_PRICING_USD[model] || MODEL_PRICING_USD['gpt-4.1-mini'];
-  if (!pricing) return 0;
+  const pricing = resolveModelPricing(model);
   const inputCost = (pricing.inputPer1M / 1_000_000) * inputTokens;
   const outputCost = (pricing.outputPer1M / 1_000_000) * outputTokens;
   return Number((inputCost + outputCost).toFixed(6));

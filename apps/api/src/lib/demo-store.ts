@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type {
   AdminAiCredentialStatus,
+  AdminAiUsageBreakdown,
   AdminAiUsageSummary,
   AiModelConfig,
   AiUsageSnapshot,
@@ -37,6 +38,7 @@ import {
   resolveTranslation
 } from '@edu-feed/shared';
 
+import { estimateCostUsd, PRICING_TABLE_VERSION, resolveModelPricing } from './ai-runtime.js';
 import { rankRelatedItems } from './related-items.js';
 
 type DemoSession = {
@@ -129,6 +131,122 @@ function normalizeExternalUrl(candidateUrl: string | null | undefined, appUrl: s
   if (!candidateUrl?.trim()) return null;
   const normalized = candidateUrl.trim();
   return isAppLocalUrl(normalized, appUrl) ? null : normalized;
+}
+
+function buildAiUsageSummary(entries: AiUsageSnapshot[], startsAt: Date): AdminAiUsageSummary {
+  const grouped = new Map<string, {
+    inputTokens: number;
+    outputTokens: number;
+    recordedCostUsd: number;
+  }>();
+
+  for (const entry of entries) {
+    const current = grouped.get(entry.model) || {
+      inputTokens: 0,
+      outputTokens: 0,
+      recordedCostUsd: 0
+    };
+    current.inputTokens += entry.inputTokens;
+    current.outputTokens += entry.outputTokens;
+    current.recordedCostUsd += entry.totalCostUsd;
+    grouped.set(entry.model, current);
+  }
+
+  const lineItems = [...grouped.entries()]
+    .map(([model, totals]) => {
+      const pricing = resolveModelPricing(model);
+      return {
+        model,
+        pricedAsModel: pricing.canonicalModel,
+        exactModelMatch: pricing.exact,
+        inputTokens: totals.inputTokens,
+        outputTokens: totals.outputTokens,
+        totalCostUsd: estimateCostUsd(model, totals.inputTokens, totals.outputTokens),
+        recordedCostUsd: Number(totals.recordedCostUsd.toFixed(6))
+      };
+    })
+    .sort((left, right) => right.totalCostUsd - left.totalCostUsd || left.model.localeCompare(right.model));
+
+  const inputTokens = lineItems.reduce((sum, entry) => sum + entry.inputTokens, 0);
+  const outputTokens = lineItems.reduce((sum, entry) => sum + entry.outputTokens, 0);
+  const totalCostUsd = Number(lineItems.reduce((sum, entry) => sum + entry.totalCostUsd, 0).toFixed(6));
+  const recordedCostUsd = Number(lineItems.reduce((sum, entry) => sum + entry.recordedCostUsd, 0).toFixed(6));
+  const fallbackModels = [...new Set(lineItems.filter((entry) => !entry.exactModelMatch).map((entry) => entry.model))];
+  const exactMatchCount = lineItems.filter((entry) => entry.exactModelMatch).length;
+  const pricingConfidence =
+    lineItems.length === 0 || exactMatchCount === lineItems.length
+      ? 'exact'
+      : exactMatchCount === 0
+        ? 'fallback'
+        : 'mixed';
+
+  return {
+    window: 'monthly',
+    startsAt: startsAt.toISOString(),
+    inputTokens,
+    outputTokens,
+    totalCostUsd,
+    recordedCostUsd,
+    estimated: true,
+    pricingBasis: 'static_model_pricing',
+    pricingTableVersion: PRICING_TABLE_VERSION,
+    pricingConfidence,
+    fallbackModels,
+    usesProviderReportedCost: false,
+    lineItems: lineItems.map(({ recordedCostUsd: _recordedCostUsd, ...entry }) => entry)
+  };
+}
+
+function usagePurposeLabel(purpose: AiUsageSnapshot['purpose']) {
+  if (purpose === 'generated_story') return 'Generated stories';
+  if (purpose === 'generated_story_verification') return 'Story verification';
+  return purpose.charAt(0).toUpperCase() + purpose.slice(1).replace(/_/g, ' ');
+}
+
+function buildAiUsageBreakdown(entries: AiUsageSnapshot[], startsAt: Date): AdminAiUsageBreakdown {
+  const totals = buildAiUsageSummary(entries, startsAt);
+  const byDay = new Map<string, { inputTokens: number; outputTokens: number; totalCostUsd: number }>();
+  const byPurpose = new Map<AiUsageSnapshot['purpose'], { inputTokens: number; outputTokens: number; totalCostUsd: number }>();
+
+  for (const entry of entries) {
+    const day = entry.createdAt.slice(0, 10);
+    const dayTotals = byDay.get(day) || { inputTokens: 0, outputTokens: 0, totalCostUsd: 0 };
+    dayTotals.inputTokens += entry.inputTokens;
+    dayTotals.outputTokens += entry.outputTokens;
+    dayTotals.totalCostUsd += entry.totalCostUsd;
+    byDay.set(day, dayTotals);
+
+    const purposeTotals = byPurpose.get(entry.purpose) || { inputTokens: 0, outputTokens: 0, totalCostUsd: 0 };
+    purposeTotals.inputTokens += entry.inputTokens;
+    purposeTotals.outputTokens += entry.outputTokens;
+    purposeTotals.totalCostUsd += entry.totalCostUsd;
+    byPurpose.set(entry.purpose, purposeTotals);
+  }
+
+  return {
+    window: 'monthly',
+    startsAt: startsAt.toISOString(),
+    totals,
+    byDay: [...byDay.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([date, totalsForDay]) => ({
+        date,
+        label: date.slice(5),
+        inputTokens: totalsForDay.inputTokens,
+        outputTokens: totalsForDay.outputTokens,
+        totalCostUsd: Number(totalsForDay.totalCostUsd.toFixed(6))
+      })),
+    byPurpose: [...byPurpose.entries()]
+      .map(([purpose, totalsForPurpose]) => ({
+        purpose,
+        label: usagePurposeLabel(purpose),
+        inputTokens: totalsForPurpose.inputTokens,
+        outputTokens: totalsForPurpose.outputTokens,
+        totalCostUsd: Number(totalsForPurpose.totalCostUsd.toFixed(6))
+      }))
+      .sort((left, right) => right.totalCostUsd - left.totalCostUsd || left.label.localeCompare(right.label)),
+    byModel: totals.lineItems
+  };
 }
 
 export class DemoStore {
@@ -707,13 +825,14 @@ export class DemoStore {
     const now = new Date();
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const monthlyUsage = this.aiUsage.filter((entry) => new Date(entry.createdAt) >= monthStart);
-    return {
-      window: 'monthly',
-      startsAt: monthStart.toISOString(),
-      inputTokens: monthlyUsage.reduce((sum, entry) => sum + entry.inputTokens, 0),
-      outputTokens: monthlyUsage.reduce((sum, entry) => sum + entry.outputTokens, 0),
-      totalCostUsd: Number(monthlyUsage.reduce((sum, entry) => sum + entry.totalCostUsd, 0).toFixed(4))
-    };
+    return buildAiUsageSummary(monthlyUsage, monthStart);
+  }
+
+  getAdminAiUsageBreakdown(): AdminAiUsageBreakdown {
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const monthlyUsage = this.aiUsage.filter((entry) => new Date(entry.createdAt) >= monthStart);
+    return buildAiUsageBreakdown(monthlyUsage, monthStart);
   }
 
   getAdminAiCredentialStatus(): AdminAiCredentialStatus {
