@@ -7,6 +7,7 @@ import BookmarkBorderRoundedIcon from '@mui/icons-material/BookmarkBorderRounded
 import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded';
 import ChatBubbleOutlineRoundedIcon from '@mui/icons-material/ChatBubbleOutlineRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import CollectionsBookmarkRoundedIcon from '@mui/icons-material/CollectionsBookmarkRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import EmailRoundedIcon from '@mui/icons-material/EmailRounded';
 import IosShareRoundedIcon from '@mui/icons-material/IosShareRounded';
@@ -34,7 +35,14 @@ import {
 import type { ContentItem, ContentLanguageMode, InterfaceLanguage } from '@edu-feed/shared';
 import { resolveTranslation } from '@edu-feed/shared';
 
-import { useHideItemMutation, useRuntimeHealthQuery, useSaveItemMutation, useShareItemMutation, useUnsaveItemMutation } from '../lib/api';
+import {
+  useAddAlbumItemMutation,
+  useHideItemMutation,
+  useRuntimeHealthQuery,
+  useSaveItemMutation,
+  useShareItemMutation,
+  useUnsaveItemMutation
+} from '../lib/api';
 import { useSessionViewer } from '../lib/session';
 import { AdminPinButton } from './AdminPinButton';
 import { AskAiCard } from './AskAiCard';
@@ -63,14 +71,16 @@ export function ArticleCard({
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
+  const [albumAnchorEl, setAlbumAnchorEl] = useState<HTMLElement | null>(null);
   const [shareAnchorEl, setShareAnchorEl] = useState<HTMLElement | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [savedState, setSavedState] = useState(isSaved);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
-  const { isAuthenticated, viewer } = useSessionViewer();
+  const { isAuthenticated, viewer, albums } = useSessionViewer();
   const healthQuery = useRuntimeHealthQuery();
   const [saveItem, saveItemState] = useSaveItemMutation();
   const [unsaveItem, unsaveItemState] = useUnsaveItemMutation();
+  const [addAlbumItem, addAlbumItemState] = useAddAlbumItemMutation();
   const [hideItem] = useHideItemMutation();
   const [shareItem] = useShareItemMutation();
   const translation = resolveTranslation(item, language) || item.translations[0];
@@ -80,6 +90,8 @@ export function ArticleCard({
   const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
   const isAdminViewer = isAuthenticated && viewer.role === 'admin';
   const saveBusy = saveItemState.isLoading || unsaveItemState.isLoading;
+  const albumBusy = saveBusy || addAlbumItemState.isLoading;
+  const albumMenuOpen = Boolean(albumAnchorEl);
   const nativeShareAvailable = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
   const shareMenuOpen = Boolean(shareAnchorEl);
 
@@ -126,7 +138,28 @@ export function ArticleCard({
     setShareAnchorEl(null);
   };
 
+  const closeAlbumMenu = () => {
+    setAlbumAnchorEl(null);
+  };
+
   const title = translation?.title || item.originalTitle;
+
+  const handleSaveToAlbum = async (albumId: string, albumTitle: string) => {
+    closeAlbumMenu();
+    try {
+      let didSave = false;
+      if (!savedState) {
+        await saveItem(item.id).unwrap();
+        setSavedState(true);
+        onSavedChange?.(item.id, true);
+        didSave = true;
+      }
+      await addAlbumItem({ albumId, itemId: item.id }).unwrap();
+      setToast(didSave ? `Saved and added to ${albumTitle}.` : `Added to ${albumTitle}.`);
+    } catch {
+      setToast('Could not add this item to the selected album.');
+    }
+  };
 
   const handleShareAction = async (action: 'native' | 'copy_story' | 'copy_source' | 'email' | 'x') => {
     closeShareMenu();
@@ -301,6 +334,16 @@ export function ArticleCard({
                   {saveBusy ? 'Saving...' : savedState ? 'Saved' : 'Save'}
                 </Button>
               )}
+              {isAuthenticated && albums.length ? (
+                <Button
+                  startIcon={<CollectionsBookmarkRoundedIcon />}
+                  variant="outlined"
+                  disabled={albumBusy}
+                  onClick={(event) => setAlbumAnchorEl(event.currentTarget)}
+                >
+                  {addAlbumItemState.isLoading ? 'Adding...' : 'Album'}
+                </Button>
+              ) : null}
               <Button
                 startIcon={<IosShareRoundedIcon />}
                 variant="outlined"
@@ -336,6 +379,20 @@ export function ArticleCard({
           </Stack>
         </CardContent>
       </Card>
+
+      <Menu anchorEl={albumAnchorEl} open={albumMenuOpen} onClose={closeAlbumMenu}>
+        {albums.map((album) => (
+          <MenuItem key={album.id} onClick={() => void handleSaveToAlbum(album.id, album.title)}>
+            <ListItemIcon>
+              <CollectionsBookmarkRoundedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText
+              primary={album.title}
+              secondary={`${album.itemIds.length} ${album.itemIds.length === 1 ? 'item' : 'items'}`}
+            />
+          </MenuItem>
+        ))}
+      </Menu>
 
       <Menu anchorEl={shareAnchorEl} open={shareMenuOpen} onClose={closeShareMenu}>
         {nativeShareAvailable ? (

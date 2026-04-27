@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import KeyboardDoubleArrowDownRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowDownRounded';
 import KeyboardDoubleArrowUpRoundedIcon from '@mui/icons-material/KeyboardDoubleArrowUpRounded';
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
@@ -35,7 +35,8 @@ export function FeedScreen({
   viewer,
   items,
   pinnedItems,
-  savedIds: fallbackSavedIds
+  savedIds: fallbackSavedIds,
+  topContent
 }: {
   feed: SubjectFeed;
   title: string;
@@ -44,6 +45,7 @@ export function FeedScreen({
   items: ContentItem[];
   pinnedItems: ContentItem[];
   savedIds: string[];
+  topContent?: ReactNode;
 }) {
   const [hiddenIds, setHiddenIds] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
@@ -78,6 +80,7 @@ export function FeedScreen({
     <AppShell title={title} subtitle={subtitle} viewer={resolvedViewer} onRefresh={paginatedFeed.refresh}>
       <Stack spacing={3}>
         <FeedToolbar feed={feed} language={resolvedLanguage} onRefresh={paginatedFeed.refresh} />
+        {topContent}
 
         <Box
           sx={{
