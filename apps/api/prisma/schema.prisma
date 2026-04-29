@@ -203,7 +203,7 @@ model SourceFeed {
   sourceId        String
   kind            FeedKind
   feedUrl         String   @unique
-  pollIntervalSec Int      @default(900)
+  pollIntervalSec Int      @default(3600)
   etag            String?
   lastModified    String?
   lastError       String?  @db.Text
@@ -221,6 +221,7 @@ model ContentItem {
   publishedAt     DateTime
   originalTitle   String
   originalSummary String         @db.Text
+  aiContentHash  String?         @db.VarChar(64)
   summaryAiProvider String?
   summaryAiModel    String?
   summaryAiInputTokens Int?

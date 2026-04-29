@@ -65,7 +65,7 @@ export class BullMqAppQueues implements AppQueues {
     });
   }
 
-  async scheduleSource(sourceId: string, feedUrl: string, pollIntervalSec = 900) {
+  async scheduleSource(sourceId: string, feedUrl: string, pollIntervalSec = 3600) {
     await this.ingestionQueue.add(
       `source:${sourceId}`,
       {

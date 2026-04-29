@@ -34,7 +34,9 @@ const resend = config.RESEND_API_KEY ? new Resend(config.RESEND_API_KEY) : null;
 
 type SchedulerQueues = {
   ingestion: Queue<IngestionJobPayload>;
+  aiEnrichment?: Queue<AiEnrichmentJobPayload>;
   newsletter: Queue<NewsletterJobPayload>;
+  runStartupIngestion?: boolean;
 };
 
 type SourceFeedRecord = Prisma.SourceFeedGetPayload<{
@@ -197,6 +199,30 @@ const generatedStoryVerificationSchema = z.object({
   unsupportedClaims: z.array(z.string().trim().min(1).max(240)).max(12)
 });
 
+const DEFAULT_SOURCE_POLL_INTERVAL_SEC = 3600;
+const INGESTION_FEED_ITEM_LIMIT = Math.max(1, config.INGESTION_FEED_ITEM_LIMIT);
+const INGESTION_ENRICHMENT_MAX_PER_RUN = Math.max(1, config.INGESTION_ENRICHMENT_MAX_PER_RUN);
+const AI_PROMPT_BODY_CHAR_LIMIT = Math.max(400, config.AI_PROMPT_BODY_CHAR_LIMIT);
+
+const GLOBAL_HARD_TOKEN_CAPS = {
+  daily: 1_200_000,
+  monthly: 18_000_000
+} as const;
+
+const PURPOSE_HARD_TOKEN_CAPS: Record<
+  'summary' | 'translation' | 'classification' | 'newsletter' | 'generated_story' | 'generated_story_verification' | 'ask' | 'related',
+  { daily: number; monthly: number }
+> = {
+  summary: { daily: 350_000, monthly: 6_000_000 },
+  translation: { daily: 280_000, monthly: 5_000_000 },
+  classification: { daily: 220_000, monthly: 4_000_000 },
+  newsletter: { daily: 120_000, monthly: 2_000_000 },
+  generated_story: { daily: 140_000, monthly: 1_500_000 },
+  generated_story_verification: { daily: 90_000, monthly: 1_000_000 },
+  ask: { daily: 180_000, monthly: 2_500_000 },
+  related: { daily: 90_000, monthly: 1_200_000 }
+};
+
 const envAiKeys = {
   OPENAI_API_KEY: config.OPENAI_API_KEY,
   ANTHROPIC_API_KEY: config.ANTHROPIC_API_KEY,
@@ -226,6 +252,37 @@ const HTML_ADAPTERS: Record<string, HtmlAdapterConfig> = {
 
 function sha1(value: string) {
   return createHash('sha1').update(value).digest('hex');
+}
+
+function startOfUtcDay(now = new Date()) {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+function startOfUtcMonth(now = new Date()) {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
+function toTokenTotal(inputTokens?: number | null, outputTokens?: number | null) {
+  return Number(inputTokens || 0) + Number(outputTokens || 0);
+}
+
+function clampPromptText(value: string, maxChars = AI_PROMPT_BODY_CHAR_LIMIT) {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, maxChars)}\n[content truncated]`;
+}
+
+function computeContentHash(input: { title: string; summary: string; body?: string | null; externalUrl?: string | null; sourceId: string; kind: string }) {
+  const body = (input.body || '').trim();
+  return sha1(
+    [
+      input.title.trim().toLowerCase(),
+      input.summary.trim().toLowerCase(),
+      clampPromptText(body, 4000).toLowerCase(),
+      (input.externalUrl || '').trim().toLowerCase(),
+      input.sourceId.trim().toLowerCase(),
+      input.kind.trim().toLowerCase()
+    ].join('|')
+  );
 }
 
 function stripHtml(value: string) {
@@ -779,7 +836,8 @@ async function ensureDefaultSourceRegistry() {
           feeds: {
             create: {
               kind: source.kind,
-              feedUrl: source.feedUrl
+              feedUrl: source.feedUrl,
+              pollIntervalSec: DEFAULT_SOURCE_POLL_INTERVAL_SEC
             }
           }
         }
@@ -813,7 +871,11 @@ async function ensureDefaultSourceRegistry() {
         },
         data: {
           kind: source.kind,
-          feedUrl: source.feedUrl
+          feedUrl: source.feedUrl,
+          pollIntervalSec:
+            primaryFeed.pollIntervalSec < DEFAULT_SOURCE_POLL_INTERVAL_SEC
+              ? DEFAULT_SOURCE_POLL_INTERVAL_SEC
+              : primaryFeed.pollIntervalSec
         }
       });
     } else {
@@ -821,7 +883,8 @@ async function ensureDefaultSourceRegistry() {
         data: {
           sourceId: source.id,
           kind: source.kind,
-          feedUrl: source.feedUrl
+          feedUrl: source.feedUrl,
+          pollIntervalSec: DEFAULT_SOURCE_POLL_INTERVAL_SEC
         }
       });
     }
@@ -850,6 +913,58 @@ async function getMonthlyAiSpendUsd() {
     }
   });
   return Number(aggregate._sum.totalCostUsd || 0);
+}
+
+async function getTokenUsageTotal(since: Date, purpose?: string) {
+  const aggregate = await prisma.aiUsageLedger.aggregate({
+    _sum: {
+      inputTokens: true,
+      outputTokens: true
+    },
+    where: {
+      createdAt: {
+        gte: since
+      },
+      ...(purpose ? { purpose } : {})
+    }
+  });
+  return toTokenTotal(aggregate._sum.inputTokens, aggregate._sum.outputTokens);
+}
+
+async function passesHardTokenCaps(
+  purpose: keyof typeof PURPOSE_HARD_TOKEN_CAPS,
+  estimatedInputTokens: number,
+  estimatedOutputTokens: number
+) {
+  const requestedTokens = estimatedInputTokens + estimatedOutputTokens;
+  const dayStart = startOfUtcDay();
+  const monthStart = startOfUtcMonth();
+  const [globalDailyUsed, globalMonthlyUsed, purposeDailyUsed, purposeMonthlyUsed] = await Promise.all([
+    getTokenUsageTotal(dayStart),
+    getTokenUsageTotal(monthStart),
+    getTokenUsageTotal(dayStart, purpose),
+    getTokenUsageTotal(monthStart, purpose)
+  ]);
+
+  if (globalDailyUsed + requestedTokens > GLOBAL_HARD_TOKEN_CAPS.daily) {
+    return { ok: false as const, reason: `global daily token cap reached (${GLOBAL_HARD_TOKEN_CAPS.daily.toLocaleString()})` };
+  }
+  if (globalMonthlyUsed + requestedTokens > GLOBAL_HARD_TOKEN_CAPS.monthly) {
+    return { ok: false as const, reason: `global monthly token cap reached (${GLOBAL_HARD_TOKEN_CAPS.monthly.toLocaleString()})` };
+  }
+  if (purposeDailyUsed + requestedTokens > PURPOSE_HARD_TOKEN_CAPS[purpose].daily) {
+    return {
+      ok: false as const,
+      reason: `${purpose} daily token cap reached (${PURPOSE_HARD_TOKEN_CAPS[purpose].daily.toLocaleString()})`
+    };
+  }
+  if (purposeMonthlyUsed + requestedTokens > PURPOSE_HARD_TOKEN_CAPS[purpose].monthly) {
+    return {
+      ok: false as const,
+      reason: `${purpose} monthly token cap reached (${PURPOSE_HARD_TOKEN_CAPS[purpose].monthly.toLocaleString()})`
+    };
+  }
+  return { ok: true as const };
 }
 
 function createAiBudgetState(aiConfig: EffectiveAiConfig, monthlySpent: number): AiBudgetState {
@@ -923,6 +1038,14 @@ async function runBudgetedCompletion<T>(input: {
   }
 
   const estimatedInputTokens = estimateTokens(`${input.systemPrompt}\n${input.userPrompt}`);
+  const hardCapCheck = await passesHardTokenCaps(input.purpose, estimatedInputTokens, input.maxOutputTokens);
+  if (!hardCapCheck.ok) {
+    await recordUniqueAiWarning(
+      `hard-cap:${input.purpose}:${input.provider}`,
+      `AI fallback active: ${input.purpose} skipped because ${hardCapCheck.reason}.`
+    );
+    return null;
+  }
   const selection = chooseBudgetedModel({
     provider: input.provider,
     configuredModel: input.configuredModel,
@@ -1124,6 +1247,7 @@ async function enrichItemWithAi(input: {
   const targetLanguageName = targetLanguage === 'bg' ? 'Bulgarian' : 'English';
   const mandatoryFlags = input.sourceType === 'community' ? (['not_verified'] as ModerationFlag[]) : [];
   const allowedSubjects = [...new Set<SubjectTag>([...input.sourceSubjects, input.fallbackSubject])];
+  const promptBody = clampPromptText(input.bodyMarkdown || input.promptText || '');
 
   let originalSummary = takeParagraph(input.originalSummary, input.originalSummary);
   let translations = input.fallbackTranslations;
@@ -1144,9 +1268,9 @@ async function enrichItemWithAi(input: {
       `Source: ${input.sourceName}`,
       `Title: ${input.originalTitle}`,
       `Current summary: ${input.originalSummary}`,
-      `Body: ${input.bodyMarkdown || input.promptText}`
+      `Body: ${promptBody}`
     ].join('\n'),
-    maxOutputTokens: 180,
+    maxOutputTokens: 140,
     budget,
     itemId: input.itemId,
     autoDowngrade: input.aiConfig.autoDowngrade
@@ -1176,7 +1300,7 @@ async function enrichItemWithAi(input: {
       `Title: ${input.originalTitle}`,
       `Summary: ${originalSummary}`
     ].join('\n'),
-    maxOutputTokens: 220,
+    maxOutputTokens: 150,
     budget,
     itemId: input.itemId,
     autoDowngrade: input.aiConfig.autoDowngrade,
@@ -1220,9 +1344,9 @@ async function enrichItemWithAi(input: {
       `Kind: ${input.kind}`,
       `Title: ${input.originalTitle}`,
       `Summary: ${originalSummary}`,
-      `Body: ${input.bodyMarkdown || input.promptText}`
+      `Body: ${promptBody}`
     ].join('\n'),
-    maxOutputTokens: 180,
+    maxOutputTokens: 110,
     budget,
     itemId: input.itemId,
     autoDowngrade: input.aiConfig.autoDowngrade,
@@ -1262,13 +1386,35 @@ async function enrichItemWithAi(input: {
 }
 
 async function persistContentItem(sourceFeed: SourceFeedRecord, input: IngestedItem) {
+  const contentHash = computeContentHash({
+    title: input.originalTitle,
+    summary: input.originalSummary,
+    body: input.bodyMarkdown || input.promptText,
+    externalUrl: input.externalUrl,
+    sourceId: sourceFeed.source.id,
+    kind: input.kind
+  });
   const existing = await prisma.contentItem.findUnique({
     where: {
       dedupeKey: input.dedupeKey
     },
     select: {
       id: true,
-      slug: true
+      slug: true,
+      aiContentHash: true,
+      summaryAiGeneratedAt: true,
+      classificationAiGeneratedAt: true,
+      translations: {
+        where: {
+          aiGeneratedAt: {
+            not: null
+          }
+        },
+        select: {
+          id: true
+        },
+        take: 1
+      }
     }
   });
 
@@ -1285,6 +1431,7 @@ async function persistContentItem(sourceFeed: SourceFeedRecord, input: IngestedI
       publishedAt: input.publishedAt,
       originalTitle: input.originalTitle,
       originalSummary: input.originalSummary,
+      aiContentHash: contentHash,
       bodyMarkdown: input.bodyMarkdown,
       coverImageUrl: input.coverImageUrl,
       externalUrl: input.externalUrl,
@@ -1303,6 +1450,7 @@ async function persistContentItem(sourceFeed: SourceFeedRecord, input: IngestedI
       publishedAt: input.publishedAt,
       originalTitle: input.originalTitle,
       originalSummary: input.originalSummary,
+      aiContentHash: contentHash,
       bodyMarkdown: input.bodyMarkdown,
       coverImageUrl: input.coverImageUrl,
       externalUrl: input.externalUrl,
@@ -1323,79 +1471,66 @@ async function persistContentItem(sourceFeed: SourceFeedRecord, input: IngestedI
     }
   });
 
-  const enrichment = await enrichItemWithAi({
-    itemId: item.id,
-    aiConfig: await getAiConfig(),
-    sourceLanguage: sourceFeed.source.language,
-    sourceName: sourceFeed.source.name,
-    sourceType: sourceFeed.source.sourceType,
-    sourceSubjects: parseSourceSubjects(sourceFeed.source),
-    defaultAudience: sourceFeed.source.defaultAudience,
-    kind: sourceFeed.kind,
-    originalTitle: input.originalTitle,
-    originalSummary: input.originalSummary,
-    bodyMarkdown: input.bodyMarkdown,
-    promptText: input.promptText,
-    slugSeed: input.slug,
-    fallbackSubject: input.subject,
-    fallbackFlags: input.tags.filter((tag) => tag.type === 'flag').map((tag) => tag.value as ModerationFlag),
-    fallbackAudience: input.audience,
-    fallbackTranslations: input.translations
-  });
-
-  if (enrichment.usedAi) {
-    await prisma.contentItem.update({
-      where: {
-        id: item.id
-      },
-      data: {
-        originalSummary: enrichment.originalSummary,
-        summaryAiProvider: enrichment.summaryAudit?.provider || null,
-        summaryAiModel: enrichment.summaryAudit?.model || null,
-        summaryAiInputTokens: enrichment.summaryAudit?.inputTokens || null,
-        summaryAiOutputTokens: enrichment.summaryAudit?.outputTokens || null,
-        summaryAiTotalCostUsd: enrichment.summaryAudit?.totalCostUsd || null,
-        summaryAiGeneratedAt: enrichment.summaryAudit?.createdAt || null,
-        subject: enrichment.subject,
-        classificationAiProvider: enrichment.classificationAudit?.provider || null,
-        classificationAiModel: enrichment.classificationAudit?.model || null,
-        classificationAiInputTokens: enrichment.classificationAudit?.inputTokens || null,
-        classificationAiOutputTokens: enrichment.classificationAudit?.outputTokens || null,
-        classificationAiTotalCostUsd: enrichment.classificationAudit?.totalCostUsd || null,
-        classificationAiGeneratedAt: enrichment.classificationAudit?.createdAt || null,
-        audience: enrichment.audience,
-        translations: {
-          deleteMany: {},
-          create: toTranslationWriteRecords(enrichment.translations)
-        },
-        tags: {
-          deleteMany: {},
-          create: enrichment.tags
-        }
-      }
-    });
-  }
+  const hasExistingAiArtifacts = Boolean(
+    existing?.summaryAiGeneratedAt &&
+      existing?.classificationAiGeneratedAt &&
+      existing.translations.length > 0
+  );
+  const needsEnrichment = !existing || existing.aiContentHash !== contentHash || !hasExistingAiArtifacts;
 
   return {
     created: !existing,
-    itemId: item.id
+    itemId: item.id,
+    contentHash,
+    needsEnrichment
   };
 }
 
-async function refreshItemMetadata(itemId: string) {
+async function refreshItemMetadata(itemId: string, expectedContentHash?: string) {
   const item = await prisma.contentItem.findUnique({
     where: {
       id: itemId
     },
     include: {
-      source: true
+      source: true,
+      translations: {
+        where: {
+          aiGeneratedAt: {
+            not: null
+          }
+        },
+        select: {
+          id: true
+        },
+        take: 1
+      }
     }
   });
   if (!item) {
     throw new Error('Item not found.');
   }
 
-  const promptText = `${item.originalTitle} ${item.originalSummary} ${item.bodyMarkdown || ''}`.trim();
+  const contentHash = computeContentHash({
+    title: item.originalTitle,
+    summary: item.originalSummary,
+    body: item.bodyMarkdown,
+    externalUrl: item.externalUrl,
+    sourceId: item.sourceId,
+    kind: item.kind
+  });
+  const hasAiArtifacts = Boolean(
+    item.summaryAiGeneratedAt &&
+      item.classificationAiGeneratedAt &&
+      item.translations.length > 0
+  );
+  if (expectedContentHash && item.aiContentHash && expectedContentHash !== item.aiContentHash) {
+    return { ok: true, skipped: true, reason: 'stale_enrichment_job' as const };
+  }
+  if (item.aiContentHash === contentHash && hasAiArtifacts) {
+    return { ok: true, skipped: true, reason: 'already_enriched' as const };
+  }
+
+  const promptText = clampPromptText(`${item.originalTitle} ${item.originalSummary} ${item.bodyMarkdown || ''}`.trim());
   const sourceSubjects = parseSourceSubjects(item.source);
   const fallbackSummary = takeParagraph(item.bodyMarkdown || item.originalSummary, item.originalSummary);
   const fallbackSubject = detectSubject(sourceSubjects, promptText, item.kind === 'youtube_video' ? 'youtube' : 'rss');
@@ -1428,6 +1563,7 @@ async function refreshItemMetadata(itemId: string) {
     },
     data: {
       originalSummary: enrichment.originalSummary,
+      aiContentHash: contentHash,
       summaryAiProvider: enrichment.summaryAudit?.provider || null,
       summaryAiModel: enrichment.summaryAudit?.model || null,
       summaryAiInputTokens: enrichment.summaryAudit?.inputTokens || null,
@@ -1452,6 +1588,7 @@ async function refreshItemMetadata(itemId: string) {
       }
     }
   });
+  return { ok: true, skipped: false as const };
 }
 
 async function selectNewsletterItems(user: NewsletterUserRecord, cadence: 'daily' | 'weekly', aiConfig: EffectiveAiConfig) {
@@ -1671,7 +1808,7 @@ async function createNewsletterSummary(input: {
           `${index + 1}. Title: ${localizedTitle(item, language)}\nSource: ${item.source.name}\nSummary: ${localizedSummary(item, language)}`
       )
     ].join('\n\n'),
-    maxOutputTokens: 260,
+    maxOutputTokens: 180,
     budget,
     userId: input.user.id,
     parser: (text) => parseJsonCompletion(text, newsletterOutputSchema)
@@ -1750,7 +1887,7 @@ async function loadGeneratedStorySourcePack(subject: SubjectTag) {
     seen.add(citation.url);
     citations.push(citation);
   }
-  return citations.slice(0, 6);
+  return citations.slice(0, 4);
 }
 
 function formatGeneratedStorySourcePack(citations: GeneratedStoryCitation[]) {
@@ -1762,7 +1899,7 @@ function formatGeneratedStorySourcePack(citations: GeneratedStoryCitation[]) {
           `Source: ${citation.sourceName}`,
           `URL: ${citation.url}`,
           `Published: ${citation.publishedAt || 'unknown'}`,
-          `Source excerpt: ${citation.excerpt || 'No excerpt available.'}`
+          `Source excerpt: ${clampPromptText(citation.excerpt || 'No excerpt available.', 280)}`
         ].join('\n')
     )
     .join('\n\n');
@@ -1811,7 +1948,7 @@ async function generateStoryDraft(input: {
       '- The summary must be one paragraph.',
       '- citedUrls must contain only URLs from the source pack that are actually used.'
     ].join('\n\n'),
-    maxOutputTokens: 900,
+    maxOutputTokens: 700,
     budget: input.budget,
     userId: input.userId,
     parser: (text) => parseJsonCompletion(text, generatedStoryOutputSchema)
@@ -1843,7 +1980,7 @@ async function generateStoryDraft(input: {
       generation.output.bodyMarkdown,
       `Draft cited URLs: ${generation.output.citedUrls.join(', ')}`
     ].join('\n\n'),
-    maxOutputTokens: 260,
+    maxOutputTokens: 180,
     budget: input.budget,
     userId: input.userId,
     parser: (text) => parseJsonCompletion(text, generatedStoryVerificationSchema)
@@ -1895,26 +2032,31 @@ export async function bootstrapRecurringJobs(queues: SchedulerQueues) {
     })
   ]);
 
+  const runStartupIngestion = queues.runStartupIngestion ?? false;
+
   await Promise.all(
-    feeds.flatMap((feed) => [
-      (() => {
+    feeds.flatMap((feed) => {
+      const jobs: Promise<unknown>[] = [];
+      if (runStartupIngestion) {
         const startupJobId = toJobId('source-startup', feed.sourceId);
-        return queues.ingestion.add(
-          startupJobId,
-          {
-            sourceId: feed.sourceId,
-            feedUrl: feed.feedUrl
-          },
-          {
-            jobId: startupJobId,
-            removeOnComplete: true,
-            removeOnFail: 50
-          }
+        jobs.push(
+          queues.ingestion.add(
+            startupJobId,
+            {
+              sourceId: feed.sourceId,
+              feedUrl: feed.feedUrl
+            },
+            {
+              jobId: startupJobId,
+              removeOnComplete: true,
+              removeOnFail: 50
+            }
+          )
         );
-      })(),
-      (() => {
-        const repeatJobId = toJobId('source', feed.sourceId);
-        return queues.ingestion.add(
+      }
+      const repeatJobId = toJobId('source', feed.sourceId);
+      jobs.push(
+        queues.ingestion.add(
           repeatJobId,
           {
             sourceId: feed.sourceId,
@@ -1928,9 +2070,10 @@ export async function bootstrapRecurringJobs(queues: SchedulerQueues) {
             removeOnComplete: true,
             removeOnFail: 50
           }
-        );
-      })()
-    ])
+        )
+      );
+      return jobs;
+    })
   );
 
   const newsletterRepeatableJobs = await queues.newsletter.getRepeatableJobs();
@@ -1971,7 +2114,12 @@ export async function shutdownProcessorServices() {
   await prisma.$disconnect();
 }
 
-export async function processIngestionJob(payload: IngestionJobPayload) {
+export async function processIngestionJob(
+  payload: IngestionJobPayload,
+  options?: {
+    aiEnrichmentQueue?: Queue<AiEnrichmentJobPayload>;
+  }
+) {
   const sourceFeed = await loadSourceFeed(payload);
   if (!sourceFeed) {
     throw new Error(`Source feed not found for ${payload.sourceId || payload.feedUrl}`);
@@ -2053,8 +2201,9 @@ export async function processIngestionJob(payload: IngestionJobPayload) {
     let createdItems = 0;
     let updatedItems = 0;
     let discoveredItems = 0;
+    const enqueuedEnrichmentIds: string[] = [];
 
-    for (const entry of items.slice(0, 20)) {
+    for (const entry of items.slice(0, INGESTION_FEED_ITEM_LIMIT)) {
       const derived = deriveFeedItem(sourceFeed, entry);
       if (!derived) continue;
       discoveredItems += 1;
@@ -2063,6 +2212,27 @@ export async function processIngestionJob(payload: IngestionJobPayload) {
         createdItems += 1;
       } else {
         updatedItems += 1;
+      }
+      if (
+        result.needsEnrichment &&
+        enqueuedEnrichmentIds.length < INGESTION_ENRICHMENT_MAX_PER_RUN &&
+        options?.aiEnrichmentQueue
+      ) {
+        const jobId = `ai-enrichment:${result.itemId}:${result.contentHash}`;
+        await options.aiEnrichmentQueue.add(
+          jobId,
+          {
+            itemId: result.itemId,
+            contentHash: result.contentHash,
+            tasks: ['summary', 'translation', 'classification']
+          },
+          {
+            jobId,
+            removeOnComplete: true,
+            removeOnFail: 50
+          }
+        );
+        enqueuedEnrichmentIds.push(result.itemId);
       }
     }
 
@@ -2081,6 +2251,7 @@ export async function processIngestionJob(payload: IngestionJobPayload) {
       discoveredItems,
       createdItems,
       updatedItems,
+      enqueuedAiEnrichment: enqueuedEnrichmentIds.length,
       polledAt: new Date().toISOString()
     };
   } catch (error) {
@@ -2110,10 +2281,11 @@ export async function processIngestionJob(payload: IngestionJobPayload) {
 }
 
 export async function processAiEnrichmentJob(payload: AiEnrichmentJobPayload) {
-  await refreshItemMetadata(payload.itemId);
+  const result = await refreshItemMetadata(payload.itemId, payload.contentHash);
   return {
     ok: true,
     itemId: payload.itemId,
+    skipped: result.skipped || false,
     completedTasks: payload.tasks
   };
 }

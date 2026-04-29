@@ -97,13 +97,20 @@ async function main() {
   };
 
   const workers = [
-    new Worker(QUEUES.ingestion, async (job) => processIngestionJob(job.data), {
-      connection,
-      concurrency: config.WORKER_CONCURRENCY
-    }),
+    new Worker(
+      QUEUES.ingestion,
+      async (job) =>
+        processIngestionJob(job.data, {
+          aiEnrichmentQueue: queues.aiEnrichment
+        }),
+      {
+        connection,
+        concurrency: config.WORKER_CONCURRENCY
+      }
+    ),
     new Worker(QUEUES.aiEnrichment, async (job) => processAiEnrichmentJob(job.data), {
       connection,
-      concurrency: config.WORKER_CONCURRENCY
+      concurrency: config.AI_ENRICHMENT_CONCURRENCY
     }),
     new Worker(QUEUES.newsletter, async (job) => processNewsletterJob(job.data), {
       connection,
@@ -117,7 +124,8 @@ async function main() {
 
   await bootstrapRecurringJobs({
     ingestion: queues.ingestion,
-    newsletter: queues.newsletter
+    newsletter: queues.newsletter,
+    runStartupIngestion: config.RUN_STARTUP_INGESTION || config.NODE_ENV === 'production'
   });
 
   const shutdown = async (signal: string) => {

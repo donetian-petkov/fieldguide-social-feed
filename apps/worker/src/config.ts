@@ -19,7 +19,12 @@ const repoManagedEnvKeys = [
   'OPENROUTER_API_KEY',
   'RESEND_API_KEY',
   'EMAIL_FROM',
-  'ENABLE_EMAIL'
+  'ENABLE_EMAIL',
+  'RUN_STARTUP_INGESTION',
+  'INGESTION_FEED_ITEM_LIMIT',
+  'INGESTION_ENRICHMENT_MAX_PER_RUN',
+  'AI_ENRICHMENT_CONCURRENCY',
+  'AI_PROMPT_BODY_CHAR_LIMIT'
 ];
 
 function parseEnvFile(filePath: string) {
@@ -72,7 +77,16 @@ const workerEnvSchema = z.object({
   ENABLE_EMAIL: z
     .string()
     .optional()
-    .transform((value) => value === 'true')
+    .transform((value) => value === 'true'),
+  RUN_STARTUP_INGESTION: z
+    .string()
+    .optional()
+    .default('false')
+    .transform((value) => value === 'true'),
+  INGESTION_FEED_ITEM_LIMIT: z.coerce.number().int().positive().default(20),
+  INGESTION_ENRICHMENT_MAX_PER_RUN: z.coerce.number().int().positive().default(6),
+  AI_ENRICHMENT_CONCURRENCY: z.coerce.number().int().positive().default(1),
+  AI_PROMPT_BODY_CHAR_LIMIT: z.coerce.number().int().positive().default(2200)
 });
 
 export type WorkerConfig = z.infer<typeof workerEnvSchema>;

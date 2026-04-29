@@ -14,6 +14,7 @@ export type IngestionJobPayload = {
 
 export type AiEnrichmentJobPayload = {
   itemId: string;
+  contentHash?: string;
   tasks: Array<'summary' | 'translation' | 'classification'>;
 };
 

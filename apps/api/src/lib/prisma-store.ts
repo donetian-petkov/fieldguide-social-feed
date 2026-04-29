@@ -40,7 +40,7 @@ import {
 } from './ai-runtime.js';
 import { rankRelatedItems } from './related-items.js';
 import { decryptAiSecret, encryptAiSecret } from './ai-secrets.js';
-import type { AdminSnapshot, AppStore, FeedResponse, RegisterInput } from './store.js';
+import type { AdminSnapshot, AppStore, AskAiResult, FeedResponse, RegisterInput } from './store.js';
 
 type UserWithSettings = Prisma.UserGetPayload<{
   include: {
@@ -111,12 +111,47 @@ const RELATED_ITEMS_LIMIT = 4;
 const RELATED_ITEMS_AI_POOL_SIZE = 8;
 const RELATED_ITEMS_HIGH_BUDGET_MONTHLY_USD = 100;
 const RELATED_ITEMS_HIGH_BUDGET_PER_JOB_USD = 0.25;
+const ASK_AI_CACHE_TTL_MS = 10 * 60 * 1000;
+const RELATED_RERANK_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const MAX_AI_CACHE_ENTRIES = 500;
+const GLOBAL_HARD_TOKEN_CAPS = {
+  daily: 1_200_000,
+  monthly: 18_000_000
+} as const;
+const PURPOSE_HARD_TOKEN_CAPS: Record<'summary' | 'translation' | 'classification' | 'newsletter' | 'generated_story' | 'generated_story_verification' | 'ask' | 'related', { daily: number; monthly: number }> =
+  {
+    summary: { daily: 350_000, monthly: 6_000_000 },
+    translation: { daily: 280_000, monthly: 5_000_000 },
+    classification: { daily: 220_000, monthly: 4_000_000 },
+    newsletter: { daily: 120_000, monthly: 2_000_000 },
+    generated_story: { daily: 140_000, monthly: 1_500_000 },
+    generated_story_verification: { daily: 90_000, monthly: 1_000_000 },
+    ask: { daily: 180_000, monthly: 2_500_000 },
+    related: { daily: 90_000, monthly: 1_200_000 }
+  };
 const relatedItemsSchema = z.object({
   rankedIds: z.array(z.string()).max(RELATED_ITEMS_AI_POOL_SIZE)
 });
 
 function hashToken(token: string) {
   return createHash('sha256').update(token).digest('hex');
+}
+
+function startOfUtcDay(now = new Date()) {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+function startOfUtcMonth(now = new Date()) {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
+function toTokenTotal(inputTokens?: number | null, outputTokens?: number | null) {
+  return Number(inputTokens || 0) + Number(outputTokens || 0);
+}
+
+function clampPromptText(value: string, maxChars: number) {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, maxChars)}\n[content truncated]`;
 }
 
 function slugify(value: string) {
@@ -605,6 +640,10 @@ export class PrismaStore implements AppStore {
   };
 
   private readonly modeVerifications = new Map<string, number>();
+
+  private readonly askAiCache = new Map<string, { expiresAt: number; value: AskAiResult }>();
+
+  private readonly relatedRerankCache = new Map<string, { expiresAt: number; value: ContentItem[] }>();
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -1626,6 +1665,19 @@ export class PrismaStore implements AppStore {
       throw new Error('AI is not available because the configured provider has no API key.');
     }
     const contentMode = viewer?.settings?.contentMode || 'standard';
+    const normalizedQuestion = question.trim().replace(/\s+/g, ' ').slice(0, 500);
+    const askCacheKey = [
+      item.id,
+      language,
+      contentMode,
+      aiConfig.provider,
+      aiConfig.askModel,
+      normalizedQuestion.toLowerCase()
+    ].join('|');
+    const cachedAnswer = this.readCache(this.askAiCache, askCacheKey);
+    if (cachedAnswer) {
+      return cachedAnswer;
+    }
 
     const systemPrompt =
       language === 'bg'
@@ -1647,12 +1699,26 @@ export class PrismaStore implements AppStore {
           ].join(' ');
     const userPrompt = [
       `Title: ${translation?.title || item.originalTitle}`,
-      `Summary: ${translation?.summary || item.originalSummary}`,
+      `Summary: ${clampPromptText(translation?.summary || item.originalSummary, 1200)}`,
       `Tags: ${item.tags.map((tag) => `${tag.type}:${tag.value}`).join(', ')}`,
-      `Question: ${question}`
+      `Question: ${normalizedQuestion}`
     ].join('\n');
     const estimatedInput = estimateTokens(`${systemPrompt}\n${userPrompt}`);
-    const estimatedOutput = 260;
+    const estimatedOutput = 160;
+    const hardCapCheck = await this.passesHardTokenCaps('ask', estimatedInput, estimatedOutput);
+    if (!hardCapCheck.ok) {
+      await this.prisma.systemErrorEvent.create({
+        data: {
+          scope: 'ai',
+          level: 'warn',
+          message: `Ask-AI fallback triggered: ${hardCapCheck.reason}.`
+        }
+      });
+      return {
+        answer: fallbackAnswer,
+        citations
+      };
+    }
 
     let model = aiConfig.askModel;
     let estimatedCost = estimateCostUsd(model, estimatedInput, estimatedOutput);
@@ -1714,10 +1780,12 @@ export class PrismaStore implements AppStore {
         }
       });
 
-      return {
-        answer: completion.text,
+      const result = {
+        answer: completion.text.trim() || fallbackAnswer,
         citations
       };
+      this.writeCache(this.askAiCache, askCacheKey, ASK_AI_CACHE_TTL_MS, result);
+      return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown Ask-AI provider failure.';
       await this.prisma.systemErrorEvent.create({
@@ -2818,6 +2886,88 @@ export class PrismaStore implements AppStore {
     return counts;
   }
 
+  private pruneExpiringCache<T>(cache: Map<string, { expiresAt: number; value: T }>) {
+    const now = Date.now();
+    for (const [key, entry] of cache.entries()) {
+      if (entry.expiresAt <= now) {
+        cache.delete(key);
+      }
+    }
+    if (cache.size <= MAX_AI_CACHE_ENTRIES) return;
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey) cache.delete(oldestKey);
+  }
+
+  private readCache<T>(cache: Map<string, { expiresAt: number; value: T }>, key: string) {
+    const hit = cache.get(key);
+    if (!hit) return null;
+    if (hit.expiresAt <= Date.now()) {
+      cache.delete(key);
+      return null;
+    }
+    return hit.value;
+  }
+
+  private writeCache<T>(cache: Map<string, { expiresAt: number; value: T }>, key: string, ttlMs: number, value: T) {
+    cache.set(key, {
+      expiresAt: Date.now() + ttlMs,
+      value
+    });
+    this.pruneExpiringCache(cache);
+  }
+
+  private async getTokenUsageTotal(since: Date, purpose?: string) {
+    const aggregate = await this.prisma.aiUsageLedger.aggregate({
+      _sum: {
+        inputTokens: true,
+        outputTokens: true
+      },
+      where: {
+        createdAt: {
+          gte: since
+        },
+        ...(purpose ? { purpose } : {})
+      }
+    });
+    return toTokenTotal(aggregate._sum.inputTokens, aggregate._sum.outputTokens);
+  }
+
+  private async passesHardTokenCaps(
+    purpose: keyof typeof PURPOSE_HARD_TOKEN_CAPS,
+    estimatedInputTokens: number,
+    estimatedOutputTokens: number
+  ) {
+    const requestedTokens = estimatedInputTokens + estimatedOutputTokens;
+    const dayStart = startOfUtcDay();
+    const monthStart = startOfUtcMonth();
+    const [globalDailyUsed, globalMonthlyUsed, purposeDailyUsed, purposeMonthlyUsed] = await Promise.all([
+      this.getTokenUsageTotal(dayStart),
+      this.getTokenUsageTotal(monthStart),
+      this.getTokenUsageTotal(dayStart, purpose),
+      this.getTokenUsageTotal(monthStart, purpose)
+    ]);
+
+    if (globalDailyUsed + requestedTokens > GLOBAL_HARD_TOKEN_CAPS.daily) {
+      return { ok: false as const, reason: `global daily token cap reached (${GLOBAL_HARD_TOKEN_CAPS.daily.toLocaleString()})` };
+    }
+    if (globalMonthlyUsed + requestedTokens > GLOBAL_HARD_TOKEN_CAPS.monthly) {
+      return { ok: false as const, reason: `global monthly token cap reached (${GLOBAL_HARD_TOKEN_CAPS.monthly.toLocaleString()})` };
+    }
+    if (purposeDailyUsed + requestedTokens > PURPOSE_HARD_TOKEN_CAPS[purpose].daily) {
+      return {
+        ok: false as const,
+        reason: `${purpose} daily token cap reached (${PURPOSE_HARD_TOKEN_CAPS[purpose].daily.toLocaleString()})`
+      };
+    }
+    if (purposeMonthlyUsed + requestedTokens > PURPOSE_HARD_TOKEN_CAPS[purpose].monthly) {
+      return {
+        ok: false as const,
+        reason: `${purpose} monthly token cap reached (${PURPOSE_HARD_TOKEN_CAPS[purpose].monthly.toLocaleString()})`
+      };
+    }
+    return { ok: true as const };
+  }
+
   private async requireUser(username: string) {
     const user = await this.prisma.user.findUnique({
       where: {
@@ -2910,6 +3060,17 @@ export class PrismaStore implements AppStore {
     if (!hasProviderKey(aiConfig.provider, aiKeys)) {
       return null;
     }
+    const rerankCacheKey = [
+      targetItem.id,
+      hashToken(`${targetItem.originalTitle}|${targetItem.originalSummary}`),
+      aiConfig.provider,
+      aiConfig.askModel,
+      ...candidates.map((candidate) => candidate.id)
+    ].join('|');
+    const cachedRerank = this.readCache(this.relatedRerankCache, rerankCacheKey);
+    if (cachedRerank) {
+      return cachedRerank;
+    }
 
     const systemPrompt = [
       'You rank related educational stories for a detail page.',
@@ -2921,7 +3082,7 @@ export class PrismaStore implements AppStore {
     const userPrompt = [
       `Current item id: ${targetItem.id}`,
       `Current title: ${targetItem.originalTitle}`,
-      `Current summary: ${targetItem.originalSummary}`,
+      `Current summary: ${clampPromptText(targetItem.originalSummary, 400)}`,
       `Current source: ${targetItem.sourceName}`,
       `Current subjects: ${targetItem.subjects.join(', ')}`,
       `Current tags: ${targetItem.tags.map((tag) => `${tag.type}:${tag.value}`).join(', ')}`,
@@ -2930,7 +3091,7 @@ export class PrismaStore implements AppStore {
         [
           `- id: ${candidate.id}`,
           `  title: ${candidate.originalTitle}`,
-          `  summary: ${candidate.originalSummary}`,
+          `  summary: ${clampPromptText(candidate.originalSummary, 220)}`,
           `  source: ${candidate.sourceName}`,
           `  subjects: ${candidate.subjects.join(', ')}`,
           `  tags: ${candidate.tags.map((tag) => `${tag.type}:${tag.value}`).join(', ')}`
@@ -2939,7 +3100,11 @@ export class PrismaStore implements AppStore {
     ].join('\n');
 
     const estimatedInput = estimateTokens(`${systemPrompt}\n${userPrompt}`);
-    const estimatedOutput = 140;
+    const estimatedOutput = 80;
+    const hardCapCheck = await this.passesHardTokenCaps('related', estimatedInput, estimatedOutput);
+    if (!hardCapCheck.ok) {
+      return null;
+    }
     let model = aiConfig.askModel;
     let estimatedCost = estimateCostUsd(model, estimatedInput, estimatedOutput);
     if (aiConfig.autoDowngrade && estimatedCost > aiConfig.perJobBudgetUsd) {
@@ -2985,6 +3150,7 @@ export class PrismaStore implements AppStore {
           totalCostUsd: estimateCostUsd(model, completion.inputTokens, completion.outputTokens)
         }
       });
+      this.writeCache(this.relatedRerankCache, rerankCacheKey, RELATED_RERANK_CACHE_TTL_MS, finalItems);
       return finalItems;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown related-item rerank failure.';

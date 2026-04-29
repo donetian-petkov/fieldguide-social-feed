@@ -2,6 +2,8 @@ import type { PrismaClient } from '@prisma/client';
 
 import { DEFAULT_SOURCE_REGISTRY } from '@edu-feed/shared';
 
+const DEFAULT_SOURCE_POLL_INTERVAL_SEC = 3600;
+
 export async function ensureDefaultSourceRegistry(prisma: PrismaClient) {
   for (const source of DEFAULT_SOURCE_REGISTRY) {
     const existing = await prisma.source.findUnique({
@@ -31,7 +33,8 @@ export async function ensureDefaultSourceRegistry(prisma: PrismaClient) {
           feeds: {
             create: {
               kind: source.kind,
-              feedUrl: source.feedUrl
+              feedUrl: source.feedUrl,
+              pollIntervalSec: DEFAULT_SOURCE_POLL_INTERVAL_SEC
             }
           }
         }
@@ -65,7 +68,11 @@ export async function ensureDefaultSourceRegistry(prisma: PrismaClient) {
         },
         data: {
           kind: source.kind,
-          feedUrl: source.feedUrl
+          feedUrl: source.feedUrl,
+          pollIntervalSec:
+            primaryFeed.pollIntervalSec < DEFAULT_SOURCE_POLL_INTERVAL_SEC
+              ? DEFAULT_SOURCE_POLL_INTERVAL_SEC
+              : primaryFeed.pollIntervalSec
         }
       });
     } else {
@@ -73,7 +80,8 @@ export async function ensureDefaultSourceRegistry(prisma: PrismaClient) {
         data: {
           sourceId: source.id,
           kind: source.kind,
-          feedUrl: source.feedUrl
+          feedUrl: source.feedUrl,
+          pollIntervalSec: DEFAULT_SOURCE_POLL_INTERVAL_SEC
         }
       });
     }
