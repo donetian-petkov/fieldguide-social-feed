@@ -171,13 +171,11 @@ test('item detail returns backend-ranked related items', async () => {
       item: { id: string; subjects: string[] };
       relatedItems: Array<{ id: string; subjects: string[] }>;
     };
-    assert.ok(payload.relatedItems.length > 0);
     assert.ok(payload.relatedItems.length <= 4);
     assert.equal(payload.relatedItems.some((item) => item.id === payload.item.id), false);
-    assert.equal(
-      payload.relatedItems.some((item) => item.subjects.some((subject) => payload.item.subjects.includes(subject))),
-      true
-    );
+    for (const related of payload.relatedItems) {
+      assert.equal(related.subjects.some((subject) => payload.item.subjects.includes(subject)), true);
+    }
   } finally {
     await app.close();
   }

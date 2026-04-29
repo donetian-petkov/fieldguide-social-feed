@@ -249,6 +249,10 @@ export function ArticleCard({
                   href={detailHref}
                   variant="h5"
                   sx={{
+                    maxWidth: {
+                      xs: '100%',
+                      lg: '34ch'
+                    },
                     color: 'text.primary',
                     textDecoration: 'none',
                     '&:hover': {
@@ -281,14 +285,30 @@ export function ArticleCard({
             </Stack>
 
             {languageMode === 'dual' ? (
-              <Stack spacing={1}>
+              <Stack
+                spacing={1}
+                sx={{
+                  maxWidth: {
+                    xs: '100%',
+                    lg: '86ch'
+                  }
+                }}
+              >
                 <Typography variant="body1">{expanded ? english?.summary : truncateSummary(english?.summary || item.originalSummary)}</Typography>
                 <Typography variant="body2" color="text.secondary">
                   {expanded ? bulgarian?.summary : truncateSummary(bulgarian?.summary || item.originalSummary)}
                 </Typography>
               </Stack>
             ) : (
-              <Typography variant="body1">
+              <Typography
+                variant="body1"
+                sx={{
+                  maxWidth: {
+                    xs: '100%',
+                    lg: '86ch'
+                  }
+                }}
+              >
                 {expanded ? translation?.summary : truncateSummary(translation?.summary || item.originalSummary)}
               </Typography>
             )}

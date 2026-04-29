@@ -40,6 +40,7 @@ import {
 
 import { estimateCostUsd, PRICING_TABLE_VERSION, resolveModelPricing } from './ai-runtime.js';
 import { rankRelatedItems } from './related-items.js';
+import type { AdminSnapshot, AlbumDetail, FeedResponse, PublicProfile, RegisterInput } from './store.js';
 
 type DemoSession = {
   username: string;
@@ -53,39 +54,6 @@ type ResetTokenRecord = {
 
 type ModeVerificationRecord = {
   verifiedUntil: number;
-};
-
-type RegisterInput = {
-  username: string;
-  displayName: string;
-  password: string;
-};
-
-type FeedResponse = {
-  items: ContentItem[];
-  pinnedItems: ContentItem[];
-  savedIds: string[];
-  hiddenIds: string[];
-  mode: ContentMode;
-  feed: SubjectFeed;
-  pagination: FeedPageInfo;
-};
-
-type AdminSnapshot = {
-  sources: SourceDefinition[];
-  submissions: SubmissionDto[];
-  users: UserSettingsDto[];
-  items: ContentItem[];
-  comments: CommentDto[];
-  errorLogs: ErrorLogDto[];
-  aiConfig: AiModelConfig;
-  aiUsage: AiUsageSnapshot[];
-  generatedStories: GeneratedStoryDraftDto[];
-};
-
-type AlbumDetail = {
-  album: AlbumDto;
-  items: ContentItem[];
 };
 
 type ProviderApiKey = AiModelConfig['provider'];
@@ -297,6 +265,14 @@ export class DemoStore {
     ['admin', new Set(['item-vermeer', 'item-nature'])]
   ]);
 
+  private savedAtByUser = new Map<string, Map<string, string>>();
+
+  private userJoinedAt = new Map<string, string>([
+    ['alex', '2026-01-12T10:00:00.000Z'],
+    ['admin', '2026-01-01T08:00:00.000Z'],
+    ['mila', '2026-02-03T09:30:00.000Z']
+  ]);
+
   private hiddenByUser = new Map<string, Set<string>>([
     ['alex', new Set()],
     ['admin', new Set()]
@@ -358,6 +334,17 @@ export class DemoStore {
         protectedModeEnabled: true
       });
     }
+    for (const [username, savedIds] of this.savedByUser.entries()) {
+      const timestamps = new Map<string, string>();
+      let index = 0;
+      for (const itemId of savedIds.values()) {
+        const item = this.items.find((entry) => entry.id === itemId);
+        const fallback = new Date(Date.now() - (savedIds.size - index) * 60 * 1000).toISOString();
+        timestamps.set(itemId, item?.publishedAt || fallback);
+        index += 1;
+      }
+      this.savedAtByUser.set(username, timestamps);
+    }
   }
 
   listSources() {
@@ -401,8 +388,10 @@ export class DemoStore {
     this.credentials.set(username, input.password);
     this.userEmails.set(username, `${username}@example.com`);
     this.savedByUser.set(username, new Set());
+    this.savedAtByUser.set(username, new Map());
     this.hiddenByUser.set(username, new Set());
     this.itemViewsByUser.set(username, new Map());
+    this.userJoinedAt.set(username, new Date().toISOString());
     const sessionId = this.createSession(username);
     return {
       sessionId,
@@ -494,7 +483,13 @@ export class DemoStore {
   }
 
   getSavedIds(username: string) {
-    return [...(this.savedByUser.get(username) || new Set<string>())];
+    const saved = this.savedByUser.get(username) || new Set<string>();
+    const savedAt = this.savedAtByUser.get(username) || new Map<string, string>();
+    return [...saved].sort((left, right) => {
+      const leftTs = new Date(savedAt.get(left) || 0).getTime();
+      const rightTs = new Date(savedAt.get(right) || 0).getTime();
+      return rightTs - leftTs;
+    });
   }
 
   getFeed(query: FeedQuery, username?: string | null): FeedResponse {
@@ -522,19 +517,32 @@ export class DemoStore {
       });
     }
 
-    items = items.sort((left, right) => +new Date(right.publishedAt) - +new Date(left.publishedAt));
+    if (query.feed === 'saved' && viewer) {
+      const savedAt = this.savedAtByUser.get(viewer.username) || new Map<string, string>();
+      items = items.sort((left, right) => {
+        const leftTs = new Date(savedAt.get(left.id) || 0).getTime();
+        const rightTs = new Date(savedAt.get(right.id) || 0).getTime();
+        return rightTs - leftTs || +new Date(right.publishedAt) - +new Date(left.publishedAt);
+      });
+    } else {
+      items = items.sort((left, right) => +new Date(right.publishedAt) - +new Date(left.publishedAt));
+    }
 
     const pinnedIds = this.pinnedSlots.filter((entry) => entry.feed === query.feed).map((entry) => entry.itemId);
     const pinnedItems = items.filter((item) => pinnedIds.includes(item.id) || (item.pinned && query.feed !== 'saved'));
     const totalItems = items.length;
     const startIndex = (query.page - 1) * query.pageSize;
     const paginatedItems = items.slice(startIndex, startIndex + query.pageSize);
+    const commentCounts = this.getCommentCountsForItems([
+      ...new Set([...paginatedItems.map((item) => item.id), ...pinnedItems.map((item) => item.id)])
+    ]);
 
     return {
       items: paginatedItems,
       pinnedItems,
       savedIds,
       hiddenIds,
+      commentCounts,
       mode,
       feed: query.feed,
       pagination: {
@@ -595,13 +603,28 @@ export class DemoStore {
     return { ok: true };
   }
 
-  getProfile(username: string) {
+  getProfile(username: string): PublicProfile | null {
     const user = this.users.find((entry) => entry.username === username);
     if (!user) return null;
+    const items = this.items
+      .filter((item) => item.authorUsername === username && !this.removedItemIds.has(item.id))
+      .sort((left, right) => +new Date(right.publishedAt) - +new Date(left.publishedAt));
+    const commentCounts = this.getCommentCountsForItems(items.map((item) => item.id));
+
     return {
       username: user.username,
       displayName: user.displayName,
-      items: this.items.filter((item) => item.authorUsername === username && !this.removedItemIds.has(item.id))
+      joinedAt: this.userJoinedAt.get(user.username) || new Date().toISOString(),
+      stats: {
+        itemsCount: items.length,
+        commentsCount: this.comments.filter(
+          (comment) => comment.authorUsername === username && !comment.deletedAt
+        ).length,
+        savedCount: (this.savedByUser.get(username) || new Set()).size,
+        albumsCount: this.albums.filter((album) => album.ownerUsername === username).length
+      },
+      commentCounts,
+      items
     };
   }
 
@@ -643,16 +666,22 @@ export class DemoStore {
 
   saveItem(username: string, itemId: string) {
     const saved = this.savedByUser.get(username) || new Set<string>();
+    const savedAt = this.savedAtByUser.get(username) || new Map<string, string>();
     saved.add(itemId);
+    savedAt.set(itemId, new Date().toISOString());
     this.savedByUser.set(username, saved);
-    return { ok: true, savedIds: [...saved] };
+    this.savedAtByUser.set(username, savedAt);
+    return { ok: true, savedIds: this.getSavedIds(username) };
   }
 
   unsaveItem(username: string, itemId: string) {
     const saved = this.savedByUser.get(username) || new Set<string>();
+    const savedAt = this.savedAtByUser.get(username) || new Map<string, string>();
     saved.delete(itemId);
+    savedAt.delete(itemId);
     this.savedByUser.set(username, saved);
-    return { ok: true, savedIds: [...saved] };
+    this.savedAtByUser.set(username, savedAt);
+    return { ok: true, savedIds: this.getSavedIds(username) };
   }
 
   getAlbums(username: string) {
@@ -1281,6 +1310,16 @@ export class DemoStore {
     const user = this.requireUser(username);
     Object.assign(user, patch);
     return user;
+  }
+
+  private getCommentCountsForItems(itemIds: string[]) {
+    const counts: Record<string, number> = {};
+    const itemSet = new Set(itemIds);
+    for (const comment of this.comments) {
+      if (comment.deletedAt || !itemSet.has(comment.itemId)) continue;
+      counts[comment.itemId] = (counts[comment.itemId] || 0) + 1;
+    }
+    return counts;
   }
 
   private createSession(username: string) {

@@ -39,6 +39,7 @@ export type FeedResponse = {
   pinnedItems: ContentItem[];
   savedIds: string[];
   hiddenIds: string[];
+  commentCounts: Record<string, number>;
   mode: ContentMode;
   feed: SubjectFeed;
   pagination: FeedPageInfo;
@@ -81,6 +82,14 @@ export type AlbumDetail = {
 export type PublicProfile = {
   username: string;
   displayName: string;
+  joinedAt: string;
+  stats: {
+    itemsCount: number;
+    commentsCount: number;
+    savedCount: number;
+    albumsCount: number;
+  };
+  commentCounts: Record<string, number>;
   items: ContentItem[];
 };
 

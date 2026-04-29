@@ -196,7 +196,18 @@ export function FeedScreen({
             </Card>
           ) : null}
 
-          <Stack spacing={2}>
+          <Stack
+            spacing={2}
+            sx={{
+              width: '100%',
+              maxWidth: {
+                lg: 1120
+              },
+              mx: {
+                lg: 'auto'
+              }
+            }}
+          >
             {visibleItems.map((item) => (
               <ArticleCard
                 key={item.id}

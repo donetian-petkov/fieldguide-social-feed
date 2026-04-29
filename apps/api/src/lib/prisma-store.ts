@@ -867,7 +867,10 @@ export class PrismaStore implements AppStore {
     const user = await this.requireUser(username);
     return (await this.prisma.savedItem.findMany({
       where: { userId: user.id },
-      select: { itemId: true }
+      select: { itemId: true },
+      orderBy: {
+        createdAt: 'desc'
+      }
     })).map((entry) => entry.itemId);
   }
 
@@ -885,12 +888,17 @@ export class PrismaStore implements AppStore {
           select: { itemId: true }
         })).map((entry) => entry.itemId)
       : [];
-    const savedIds = viewer
-      ? (await this.prisma.savedItem.findMany({
+    const savedEntries = viewer
+      ? await this.prisma.savedItem.findMany({
           where: { userId: viewer.id },
-          select: { itemId: true }
-        })).map((entry) => entry.itemId)
+          select: { itemId: true, createdAt: true },
+          orderBy: {
+            createdAt: 'desc'
+          }
+        })
       : [];
+    const savedIds = savedEntries.map((entry) => entry.itemId);
+    const savedAtByItem = new Map(savedEntries.map((entry) => [entry.itemId, entry.createdAt.getTime()]));
     const itemRecords = await this.prisma.contentItem.findMany({
       where: {
         removedAt: null
@@ -916,7 +924,9 @@ export class PrismaStore implements AppStore {
     const allItems = itemRecords.map((item) => buildItemDto(item, this.appUrl));
     let items =
       query.feed === 'saved'
-        ? allItems.filter((item) => savedIds.includes(item.id))
+        ? allItems
+            .filter((item) => savedAtByItem.has(item.id))
+            .sort((left, right) => (savedAtByItem.get(right.id) || 0) - (savedAtByItem.get(left.id) || 0))
         : filterItemsForFeed(allItems, query.feed, mode, hiddenIds);
 
     if (query.search?.trim()) {
@@ -944,12 +954,16 @@ export class PrismaStore implements AppStore {
     const totalItems = items.length;
     const startIndex = (query.page - 1) * query.pageSize;
     const paginatedItems = items.slice(startIndex, startIndex + query.pageSize);
+    const commentCounts = await this.getCommentCountsForItems([
+      ...new Set([...paginatedItems.map((item) => item.id), ...pinnedItems.map((item) => item.id)])
+    ]);
 
     return {
       items: paginatedItems,
       pinnedItems,
       savedIds,
       hiddenIds,
+      commentCounts,
       mode,
       feed: query.feed,
       pagination: {
@@ -1084,35 +1098,63 @@ export class PrismaStore implements AppStore {
     });
     if (!user) return null;
 
-    const items = await this.prisma.contentItem.findMany({
-      where: {
-        author: {
-          username
+    const [items, commentsCount, savedCount, albumsCount] = await Promise.all([
+      this.prisma.contentItem.findMany({
+        where: {
+          author: {
+            username
+          },
+          removedAt: null
         },
-        removedAt: null
-      },
-      include: {
-        source: {
-          include: {
-            feeds: true
-          }
+        include: {
+          source: {
+            include: {
+              feeds: true
+            }
+          },
+          author: {
+            include: {
+              settings: true
+            }
+          },
+          translations: true,
+          tags: true
         },
-        author: {
-          include: {
-            settings: true
-          }
-        },
-        translations: true,
-        tags: true
-      },
-      orderBy: {
-        publishedAt: 'desc'
-      }
-    });
+        orderBy: {
+          publishedAt: 'desc'
+        }
+      }),
+      this.prisma.comment.count({
+        where: {
+          authorId: user.id,
+          deletedAt: null
+        }
+      }),
+      this.prisma.savedItem.count({
+        where: {
+          userId: user.id
+        }
+      }),
+      this.prisma.album.count({
+        where: {
+          ownerId: user.id
+        }
+      })
+    ]);
+    const itemDtos = items.map((item) => buildItemDto(item, this.appUrl));
+    const commentCounts = await this.getCommentCountsForItems(itemDtos.map((item) => item.id));
     return {
       username: user.username,
       displayName: user.settings?.displayName || user.username,
-      items: items.map((item) => buildItemDto(item, this.appUrl))
+      joinedAt: user.createdAt.toISOString(),
+      stats: {
+        itemsCount: itemDtos.length,
+        commentsCount,
+        savedCount,
+        albumsCount
+      },
+      commentCounts,
+      items: itemDtos
     };
   }
 
@@ -2751,6 +2793,29 @@ export class PrismaStore implements AppStore {
       }
     });
     return token;
+  }
+
+  private async getCommentCountsForItems(itemIds: string[]) {
+    if (!itemIds.length) {
+      return {} as Record<string, number>;
+    }
+    const grouped = await this.prisma.comment.groupBy({
+      by: ['itemId'],
+      where: {
+        itemId: {
+          in: itemIds
+        },
+        deletedAt: null
+      },
+      _count: {
+        _all: true
+      }
+    });
+    const counts: Record<string, number> = Object.fromEntries(itemIds.map((itemId) => [itemId, 0]));
+    for (const entry of grouped) {
+      counts[entry.itemId] = entry._count._all;
+    }
+    return counts;
   }
 
   private async requireUser(username: string) {
