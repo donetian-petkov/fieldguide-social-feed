@@ -2158,7 +2158,7 @@ export async function processIngestionJob(
     };
   }
 
-  if (sourceFeed.source.status !== 'active') {
+  if (sourceFeed.source.status === 'paused') {
     await prisma.sourceFeed.update({
       where: {
         id: sourceFeed.id
