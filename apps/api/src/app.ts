@@ -96,7 +96,7 @@ export async function buildApp(options?: {
   await registerRuntimeRoutes(app);
   await registerMediaRoutes(app);
   await registerAuthRoutes(app, { store, config });
-  await registerFeedRoutes(app, { store });
+  await registerFeedRoutes(app, { store, queues });
   await registerItemRoutes(app, { store });
   await registerMeRoutes(app, { store, queues });
   await app.register(async (instance) => registerAdminRoutes(instance, { store, queues }), { prefix: '' });

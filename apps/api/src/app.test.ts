@@ -19,6 +19,7 @@ class TrackingStore extends DemoStore {
 
 class TrackingQueues implements AppQueues {
   public scheduledSources: Array<{ sourceId: string; feedUrl: string; pollIntervalSec?: number }> = [];
+  public resyncedSources: Array<{ sourceId: string; feedUrl: string }> = [];
 
   public syncedNewsletters: Array<{ username: string; enabled: boolean; mode?: 'weekly' | 'daily' }> = [];
 
@@ -28,7 +29,9 @@ class TrackingQueues implements AppQueues {
     this.scheduledSources.push({ sourceId, feedUrl, pollIntervalSec });
   }
 
-  async runSourceResync() {}
+  async runSourceResync(sourceId: string, feedUrl: string) {
+    this.resyncedSources.push({ sourceId, feedUrl });
+  }
 
   async removeSourceSchedule() {}
 
@@ -204,6 +207,38 @@ test('feed pagination returns a stable page slice and metadata', async () => {
     assert.equal(typeof firstPage.json().pagination.totalItems, 'number');
     assert.equal(typeof firstPage.json().pagination.hasMore, 'boolean');
     assert.notEqual(firstPage.json().items[0].id, secondPage.json().items[0].id);
+  } finally {
+    await app.close();
+  }
+});
+
+test('feed refresh enqueues incremental resync for eligible sources in the selected feed', async () => {
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/feed/refresh',
+      payload: {
+        feed: 'history'
+      }
+    });
+
+    assert.equal(response.statusCode, 200);
+    const expected = DEMO_SOURCES.filter(
+      (source) =>
+        source.sourceType !== 'community' &&
+        source.status !== 'paused' &&
+        source.subjects.includes('history')
+    );
+
+    assert.equal(response.json().queued, expected.length);
+    assert.equal(queues.resyncedSources.length, expected.length);
+    assert.deepEqual(
+      queues.resyncedSources.map((source) => source.sourceId).sort(),
+      expected.map((source) => source.id).sort()
+    );
   } finally {
     await app.close();
   }

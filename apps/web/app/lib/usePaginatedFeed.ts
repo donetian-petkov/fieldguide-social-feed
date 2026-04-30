@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ContentItem, FeedPageInfo, SubjectFeed } from '@edu-feed/shared';
 import { DEFAULT_FEED_PAGE_SIZE } from '@edu-feed/shared';
 
-import { useFeedQuery } from './api';
+import { useFeedQuery, useRefreshFeedMutation } from './api';
 
 function mergeItems(current: ContentItem[], next: ContentItem[]) {
   const seen = new Set(current.map((item) => item.id));
@@ -27,6 +27,7 @@ export function usePaginatedFeed({ feed, fallbackItems, fallbackPinnedItems, fal
   const [apiPinnedItems, setApiPinnedItems] = useState<ContentItem[]>([]);
   const [apiSavedIds, setApiSavedIds] = useState<string[]>([]);
   const [apiPagination, setApiPagination] = useState<FeedPageInfo | null>(null);
+  const [refreshFeed] = useRefreshFeedMutation();
   const feedQuery = useFeedQuery(
     {
       feed,
@@ -83,7 +84,14 @@ export function usePaginatedFeed({ feed, fallbackItems, fallbackPinnedItems, fal
     isError: feedQuery.isError,
     isFetching: feedQuery.isFetching,
     isLoading: feedQuery.isLoading,
-    refresh: () => {
+    refresh: async () => {
+      if (!skip) {
+        try {
+          await refreshFeed({ feed }).unwrap();
+        } catch {
+          // Feed data refetch still proceeds even if enqueueing refresh jobs fails.
+        }
+      }
       setPage(1);
       setApiItems([]);
       setApiPinnedItems([]);

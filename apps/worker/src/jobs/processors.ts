@@ -2123,6 +2123,7 @@ export async function processIngestionJob(
   }
 ) {
   const sourceFeed = await loadSourceFeed(payload);
+  const windowStart = sourceFeed?.lastCheckedAt || null;
   if (!sourceFeed) {
     throw new Error(`Source feed not found for ${payload.sourceId || payload.feedUrl}`);
   }
@@ -2203,11 +2204,16 @@ export async function processIngestionJob(
     let createdItems = 0;
     let updatedItems = 0;
     let discoveredItems = 0;
+    let skippedOlderThanLastCheck = 0;
     const enqueuedEnrichmentIds: string[] = [];
 
     for (const entry of items.slice(0, INGESTION_FEED_ITEM_LIMIT)) {
       const derived = deriveFeedItem(sourceFeed, entry);
       if (!derived) continue;
+      if (windowStart && derived.publishedAt <= windowStart) {
+        skippedOlderThanLastCheck += 1;
+        continue;
+      }
       discoveredItems += 1;
       const result = await persistContentItem(sourceFeed, derived);
       if (result.created) {
@@ -2253,6 +2259,7 @@ export async function processIngestionJob(
       discoveredItems,
       createdItems,
       updatedItems,
+      skippedOlderThanLastCheck,
       enqueuedAiEnrichment: enqueuedEnrichmentIds.length,
       polledAt: new Date().toISOString()
     };

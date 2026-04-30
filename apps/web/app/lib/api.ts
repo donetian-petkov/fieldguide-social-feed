@@ -37,6 +37,14 @@ type FeedResponse = {
   pagination: FeedPageInfo;
 };
 
+type FeedRefreshResponse = {
+  ok: boolean;
+  queued: number;
+  failed: number;
+  feed: SubjectFeed;
+  message: string;
+};
+
 type ItemResponse = {
   item: ContentItem;
   comments: CommentDto[];
@@ -117,6 +125,13 @@ export const fieldguideApi = createApi({
     feed: builder.query<FeedResponse, { feed: SubjectFeed; page?: number; pageSize?: number; refreshToken?: number }>({
       query: ({ feed, page = 1, pageSize = 20 }) => `/v1/feed?feed=${feed}&page=${page}&pageSize=${pageSize}`,
       providesTags: (_result, _error, args) => ['Feed', { type: 'Feed', id: args.feed }]
+    }),
+    refreshFeed: builder.mutation<FeedRefreshResponse, { feed: SubjectFeed }>({
+      query: (body) => ({
+        url: '/v1/feed/refresh',
+        method: 'POST',
+        body
+      })
     }),
     item: builder.query<ItemResponse, string>({
       query: (itemId: string) => `/v1/items/${itemId}`,
@@ -457,6 +472,7 @@ export const {
   useDeleteSourceMutation,
   useDeleteAdminCommentMutation,
   useFeedQuery,
+  useRefreshFeedMutation,
   useForgotPasswordMutation,
   useGeneratedStoriesQuery,
   useHealthQuery,
