@@ -2276,7 +2276,15 @@ export async function processIngestionJob(
       }),
       recordSystemError('ingestion', 'error', `${sourceFeed.feedUrl}: ${message}`)
     ]);
-    throw error;
+    return {
+      ok: false,
+      sourceName: sourceFeed.source.name,
+      discoveredItems: 0,
+      createdItems: 0,
+      updatedItems: 0,
+      polledAt: new Date().toISOString(),
+      error: message
+    };
   }
 }
 
