@@ -81,7 +81,7 @@ const workerEnvSchema = z.object({
   RUN_STARTUP_INGESTION: z
     .string()
     .optional()
-    .default('false')
+    .default('true')
     .transform((value) => value === 'true'),
   INGESTION_FEED_ITEM_LIMIT: z.coerce.number().int().positive().default(20),
   INGESTION_ENRICHMENT_MAX_PER_RUN: z.coerce.number().int().positive().default(6),

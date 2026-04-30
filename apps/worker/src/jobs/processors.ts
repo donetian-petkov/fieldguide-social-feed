@@ -2010,7 +2010,9 @@ export async function bootstrapRecurringJobs(queues: SchedulerQueues) {
     prisma.sourceFeed.findMany({
       where: {
         source: {
-          status: 'active',
+          status: {
+            not: 'paused'
+          },
           sourceType: {
             not: 'community'
           }
