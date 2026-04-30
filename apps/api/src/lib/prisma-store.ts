@@ -1659,10 +1659,13 @@ export class PrismaStore implements AppStore {
         data: {
           scope: 'ai',
           level: 'warn',
-          message: `Ask-AI request rejected: missing API key for provider ${aiConfig.provider}.`
+          message: `Ask-AI fallback triggered: missing API key for provider ${aiConfig.provider}.`
         }
       });
-      throw new Error('AI is not available because the configured provider has no API key.');
+      return {
+        answer: fallbackAnswer,
+        citations
+      };
     }
     const contentMode = viewer?.settings?.contentMode || 'standard';
     const normalizedQuestion = question.trim().replace(/\s+/g, ' ').slice(0, 500);

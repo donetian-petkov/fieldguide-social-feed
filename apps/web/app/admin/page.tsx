@@ -8,14 +8,16 @@ import { AdminSectionNav } from '../components/AdminSectionNav';
 import { AppShell } from '../components/AppShell';
 import { SectionCard } from '../components/SectionCard';
 import { DEMO_FALLBACK_ENABLED, getAdminModel, getEmptyAdminModel } from '../lib/demo';
-import { useAdminDashboardQuery } from '../lib/api';
+import { useAdminDashboardQuery, useRuntimeHealthQuery } from '../lib/api';
 import { useSessionViewer } from '../lib/session';
 
 export default function AdminPage() {
   const fallback = DEMO_FALLBACK_ENABLED ? getAdminModel() : getEmptyAdminModel();
   const { viewer } = useSessionViewer();
   const adminQuery = useAdminDashboardQuery();
+  const healthQuery = useRuntimeHealthQuery();
   const model = adminQuery.data || fallback;
+  const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
   const cards = [
     {
       title: 'Sources',
@@ -44,10 +46,12 @@ export default function AdminPage() {
     {
       title: 'AI',
       eyebrow: 'Provider and budgets',
-      metric: model.aiConfig.provider.toUpperCase(),
-      description: 'Change provider and models, inspect spend, and review generated story drafts.',
+      metric: aiAvailable ? model.aiConfig.provider.toUpperCase() : 'Disabled',
+      description: aiAvailable
+        ? 'Change provider and models, inspect spend, and review generated story drafts.'
+        : 'AI is currently disabled. Core site features still work; add a provider key here to enable AI features.',
       href: '/admin/ai',
-      cta: 'Open AI controls'
+      cta: aiAvailable ? 'Open AI controls' : 'Enable AI'
     },
     {
       title: 'Usage',

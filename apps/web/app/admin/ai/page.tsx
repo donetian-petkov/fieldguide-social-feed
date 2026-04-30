@@ -176,6 +176,13 @@ export default function AdminAiPage() {
         <Box sx={{ gridColumn: { xs: 'auto', md: '1 / -1' } }}>
           <AdminSectionNav />
         </Box>
+        {!aiAvailable ? (
+          <Box sx={{ gridColumn: { xs: 'auto', md: '1 / -1' } }}>
+            <Alert severity="info">
+              AI is currently disabled. The site still works without it. Save a provider key here to enable Ask AI, AI enrichment, generated stories, and live usage.
+            </Alert>
+          </Box>
+        ) : null}
         <Box>
           <SectionCard title="Configuration" eyebrow={form.provider}>
             <Stack spacing={2}>
@@ -279,11 +286,17 @@ export default function AdminAiPage() {
         <Box>
           <SectionCard title="Recent usage" eyebrow="Ledger">
             <Stack spacing={1.25}>
-              {model.aiUsage.map((usage, index) => (
-                <Typography variant="body2" key={`${usage.model}-${index}`}>
-                  {usage.purpose}: {usage.provider} / {usage.model} • ${usage.totalCostUsd}
+              {model.aiUsage.length ? (
+                model.aiUsage.map((usage, index) => (
+                  <Typography variant="body2" key={`${usage.model}-${index}`}>
+                    {usage.purpose}: {usage.provider} / {usage.model} • ${usage.totalCostUsd}
+                  </Typography>
+                ))
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  No AI usage has been recorded yet.
                 </Typography>
-              ))}
+              )}
             </Stack>
           </SectionCard>
         </Box>

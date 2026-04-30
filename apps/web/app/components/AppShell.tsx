@@ -86,8 +86,9 @@ export function AppShell({
   const [logout, logoutState] = useLogoutMutation();
   const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
   const isAdminViewer = isAuthenticated && resolvedViewer.role === 'admin';
+  const showAdminUsageChip = isAdminViewer && aiAvailable;
   const adminUsageSummaryQuery = useAdminUsageSummaryQuery(undefined, {
-    skip: !isAdminViewer,
+    skip: !showAdminUsageChip,
     pollingInterval: 15000,
     refetchOnMountOrArgChange: true,
     refetchOnFocus: true,
@@ -282,7 +283,7 @@ export function AppShell({
               {subtitle}
             </Typography>
           </Stack>
-          {isAdminViewer ? (
+          {showAdminUsageChip ? (
             <Box
               component={Link}
               href="/admin/usage"
