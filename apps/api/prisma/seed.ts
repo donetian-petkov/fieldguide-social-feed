@@ -119,6 +119,7 @@ async function main() {
       translationModel: DEMO_AI_CONFIG.translationModel,
       askModel: DEMO_AI_CONFIG.askModel,
       newsletterModel: DEMO_AI_CONFIG.newsletterModel,
+      ollamaBaseUrl: DEMO_AI_CONFIG.ollamaBaseUrl || null,
       monthlyBudgetUsd: DEMO_AI_CONFIG.monthlyBudgetUsd,
       perJobBudgetUsd: DEMO_AI_CONFIG.perJobBudgetUsd,
       autoDowngrade: DEMO_AI_CONFIG.autoDowngrade,

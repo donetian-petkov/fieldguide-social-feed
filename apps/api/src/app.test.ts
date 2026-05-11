@@ -66,6 +66,7 @@ const testConfig: AppConfig = {
   OPENAI_API_KEY: '',
   ANTHROPIC_API_KEY: '',
   OPENROUTER_API_KEY: '',
+  OLLAMA_BASE_URL: '',
   ENABLE_EMAIL: false
 };
 

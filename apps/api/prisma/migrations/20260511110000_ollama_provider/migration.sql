@@ -1,0 +1,2 @@
+ALTER TABLE `AiConfig`
+  ADD COLUMN `ollamaBaseUrl` VARCHAR(255) NULL;

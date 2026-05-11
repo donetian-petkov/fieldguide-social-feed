@@ -6,7 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import type { UserSettingsDto } from '@edu-feed/shared';
 
 import { getConfig, type AppConfig } from './config.js';
-import { hasProviderKey } from './lib/ai-runtime.js';
+import { isProviderAvailable } from './lib/ai-runtime.js';
 import { DemoStore } from './lib/demo-store.js';
 import { BullMqAppQueues, NoopQueues, type AppQueues } from './lib/queues.js';
 import type { AppStore } from './lib/store.js';
@@ -52,7 +52,8 @@ export async function buildApp(options?: {
           aiKeys: {
             OPENAI_API_KEY: config.OPENAI_API_KEY,
             ANTHROPIC_API_KEY: config.ANTHROPIC_API_KEY,
-            OPENROUTER_API_KEY: config.OPENROUTER_API_KEY
+            OPENROUTER_API_KEY: config.OPENROUTER_API_KEY,
+            OLLAMA_BASE_URL: config.OLLAMA_BASE_URL
           }
         })
       : new PrismaStore(prisma!, {
@@ -62,7 +63,8 @@ export async function buildApp(options?: {
           aiKeys: {
             OPENAI_API_KEY: config.OPENAI_API_KEY,
             ANTHROPIC_API_KEY: config.ANTHROPIC_API_KEY,
-            OPENROUTER_API_KEY: config.OPENROUTER_API_KEY
+            OPENROUTER_API_KEY: config.OPENROUTER_API_KEY,
+            OLLAMA_BASE_URL: config.OLLAMA_BASE_URL
           }
         }));
 
@@ -112,7 +114,7 @@ async function resolveAiCapabilities(store: AppStore) {
   const [aiConfig, aiKeys] = await Promise.all([store.getAiConfig(), store.getAiRuntimeKeys()]);
   const provider = aiConfig.provider;
   return {
-    aiAvailable: hasProviderKey(provider, aiKeys),
+    aiAvailable: await isProviderAvailable(provider, aiKeys),
     aiProvider: provider
   };
 }

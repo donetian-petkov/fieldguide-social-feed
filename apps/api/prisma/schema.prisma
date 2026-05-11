@@ -414,6 +414,7 @@ model AiConfig {
   openaiApiKeyCiphertext    String? @db.LongText
   anthropicApiKeyCiphertext String? @db.LongText
   openrouterApiKeyCiphertext String? @db.LongText
+  ollamaBaseUrl            String?  @db.VarChar(255)
   updatedAt             DateTime @updatedAt
 }
 

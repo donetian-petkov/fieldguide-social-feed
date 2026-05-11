@@ -52,7 +52,7 @@ const generatedStoryReviewSchema = z.object({
 });
 
 const aiCredentialUpdateSchema = z.object({
-  provider: aiProviderSchema,
+  provider: aiProviderSchema.exclude(['ollama']),
   apiKey: z.string().trim().min(1).optional(),
   clear: z.boolean().default(false)
 }).refine((value) => value.clear || Boolean(value.apiKey), {

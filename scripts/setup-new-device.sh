@@ -304,6 +304,8 @@ if [[ "$INTERACTIVE" == "true" ]]; then
   ASK_MODEL_VALUE="${ASK_MODEL_VALUE:-gpt-4.1-mini}"
   NEWSLETTER_MODEL_VALUE="$(read_env_value "NEWSLETTER_MODEL")"
   NEWSLETTER_MODEL_VALUE="${NEWSLETTER_MODEL_VALUE:-gpt-4.1-mini}"
+  OLLAMA_BASE_URL_VALUE="$(read_env_value "OLLAMA_BASE_URL")"
+  OLLAMA_BASE_URL_VALUE="${OLLAMA_BASE_URL_VALUE:-http://127.0.0.1:11434}"
   ENABLE_EMAIL_VALUE="$(read_env_value "ENABLE_EMAIL")"
   ENABLE_EMAIL_VALUE="${ENABLE_EMAIL_VALUE:-false}"
   EMAIL_FROM_VALUE="$(read_env_value "EMAIL_FROM")"
@@ -311,9 +313,9 @@ if [[ "$INTERACTIVE" == "true" ]]; then
 
   if prompt_yes_no "Configure AI provider settings?" "y"; then
     while true; do
-      DEFAULT_AI_PROVIDER_VALUE="$(prompt_value "AI provider (openai, anthropic, openrouter)" "$DEFAULT_AI_PROVIDER_VALUE")"
+      DEFAULT_AI_PROVIDER_VALUE="$(prompt_value "AI provider (openai, anthropic, openrouter, ollama)" "$DEFAULT_AI_PROVIDER_VALUE")"
       case "$DEFAULT_AI_PROVIDER_VALUE" in
-        openai|anthropic|openrouter) break ;;
+        openai|anthropic|openrouter|ollama) break ;;
       esac
     done
     write_env_value "DEFAULT_AI_PROVIDER" "$DEFAULT_AI_PROVIDER_VALUE"
@@ -326,37 +328,61 @@ if [[ "$INTERACTIVE" == "true" ]]; then
     write_env_value "ASK_MODEL" "$ASK_MODEL_VALUE"
     write_env_value "NEWSLETTER_MODEL" "$NEWSLETTER_MODEL_VALUE"
 
-    case "$DEFAULT_AI_PROVIDER_VALUE" in
-      openai)
-        CURRENT_PROVIDER_KEY="$(read_env_value "OPENAI_API_KEY")"
-        ;;
-      anthropic)
-        CURRENT_PROVIDER_KEY="$(read_env_value "ANTHROPIC_API_KEY")"
-        ;;
-      openrouter)
-        CURRENT_PROVIDER_KEY="$(read_env_value "OPENROUTER_API_KEY")"
-        ;;
-    esac
-
-    PROVIDER_KEY_PROMPT="API key for $DEFAULT_AI_PROVIDER_VALUE"
-    if [[ -n "$CURRENT_PROVIDER_KEY" ]]; then
-      PROVIDER_KEY_PROMPT="$PROVIDER_KEY_PROMPT (leave blank to keep current value)"
+    if [[ "$DEFAULT_AI_PROVIDER_VALUE" == "ollama" ]]; then
+      OLLAMA_BASE_URL_VALUE="$(prompt_value "Ollama base URL" "$OLLAMA_BASE_URL_VALUE")"
+      write_env_value "OLLAMA_BASE_URL" "$OLLAMA_BASE_URL_VALUE"
     else
-      PROVIDER_KEY_PROMPT="$PROVIDER_KEY_PROMPT (leave blank to keep AI disabled)"
-    fi
-    NEXT_PROVIDER_KEY="$(prompt_secret "$PROVIDER_KEY_PROMPT")"
-    if [[ -n "$NEXT_PROVIDER_KEY" ]]; then
       case "$DEFAULT_AI_PROVIDER_VALUE" in
         openai)
-          write_env_value "OPENAI_API_KEY" "$NEXT_PROVIDER_KEY"
+          CURRENT_PROVIDER_KEY="$(read_env_value "OPENAI_API_KEY")"
           ;;
         anthropic)
-          write_env_value "ANTHROPIC_API_KEY" "$NEXT_PROVIDER_KEY"
+          CURRENT_PROVIDER_KEY="$(read_env_value "ANTHROPIC_API_KEY")"
           ;;
         openrouter)
-          write_env_value "OPENROUTER_API_KEY" "$NEXT_PROVIDER_KEY"
+          CURRENT_PROVIDER_KEY="$(read_env_value "OPENROUTER_API_KEY")"
           ;;
       esac
+
+      PROVIDER_KEY_PROMPT="API key for $DEFAULT_AI_PROVIDER_VALUE"
+      if [[ -n "$CURRENT_PROVIDER_KEY" ]]; then
+        PROVIDER_KEY_PROMPT="$PROVIDER_KEY_PROMPT (leave blank to keep current value)"
+      else
+        PROVIDER_KEY_PROMPT="$PROVIDER_KEY_PROMPT (leave blank to keep AI disabled)"
+      fi
+      NEXT_PROVIDER_KEY="$(prompt_secret "$PROVIDER_KEY_PROMPT")"
+      if [[ -n "$NEXT_PROVIDER_KEY" ]]; then
+        case "$DEFAULT_AI_PROVIDER_VALUE" in
+          openai)
+            write_env_value "OPENAI_API_KEY" "$NEXT_PROVIDER_KEY"
+            ;;
+          anthropic)
+            write_env_value "ANTHROPIC_API_KEY" "$NEXT_PROVIDER_KEY"
+            ;;
+          openrouter)
+            write_env_value "OPENROUTER_API_KEY" "$NEXT_PROVIDER_KEY"
+            ;;
+        esac
+      fi
+    fi
+  fi
+
+  if [[ "$DEFAULT_AI_PROVIDER_VALUE" == "ollama" ]]; then
+    if [[ "$SUMMARY_MODEL_VALUE" == "gpt-4.1-mini" ]]; then
+      SUMMARY_MODEL_VALUE="llama3.1:8b"
+      write_env_value "SUMMARY_MODEL" "$SUMMARY_MODEL_VALUE"
+    fi
+    if [[ "$TRANSLATION_MODEL_VALUE" == "gpt-4.1-mini" ]]; then
+      TRANSLATION_MODEL_VALUE="llama3.1:8b"
+      write_env_value "TRANSLATION_MODEL" "$TRANSLATION_MODEL_VALUE"
+    fi
+    if [[ "$ASK_MODEL_VALUE" == "gpt-4.1-mini" ]]; then
+      ASK_MODEL_VALUE="llama3.1:8b"
+      write_env_value "ASK_MODEL" "$ASK_MODEL_VALUE"
+    fi
+    if [[ "$NEWSLETTER_MODEL_VALUE" == "gpt-4.1-mini" ]]; then
+      NEWSLETTER_MODEL_VALUE="llama3.1:8b"
+      write_env_value "NEWSLETTER_MODEL" "$NEWSLETTER_MODEL_VALUE"
     fi
   fi
 
@@ -474,8 +500,20 @@ case "$DEFAULT_AI_PROVIDER_VALUE" in
   openrouter)
     ACTIVE_AI_KEY="$(read_env_value "OPENROUTER_API_KEY")"
     ;;
+  ollama)
+    ACTIVE_AI_KEY="$(read_env_value "OLLAMA_BASE_URL")"
+    ;;
 esac
-printf 'AI:   %s (%s)\n' "$DEFAULT_AI_PROVIDER_VALUE" "$([[ -n "${ACTIVE_AI_KEY:-}" ]] && printf 'key configured' || printf 'disabled')"
+if [[ -n "${ACTIVE_AI_KEY:-}" ]]; then
+  if [[ "$DEFAULT_AI_PROVIDER_VALUE" == "ollama" ]]; then
+    AI_STATUS='base URL configured'
+  else
+    AI_STATUS='key configured'
+  fi
+else
+  AI_STATUS='disabled'
+fi
+printf 'AI:   %s (%s)\n' "$DEFAULT_AI_PROVIDER_VALUE" "$AI_STATUS"
 printf 'Mail: %s\n' "$( [[ "$(read_env_value "ENABLE_EMAIL")" == "true" ]] && printf 'enabled' || printf 'disabled' )"
 if [[ "$MODE" == "database" ]]; then
   printf 'Admin login: admin / %s\n' "$CURRENT_SEED_PASSWORD"

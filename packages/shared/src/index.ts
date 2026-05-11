@@ -34,7 +34,7 @@ export const vibePresetSchema = z.enum([
   'cinema',
   'naturalist'
 ]);
-export const aiProviderSchema = z.enum(['openai', 'anthropic', 'openrouter']);
+export const aiProviderSchema = z.enum(['openai', 'anthropic', 'openrouter', 'ollama']);
 export const aiBudgetModeSchema = z.enum(['low', 'standard', 'high']);
 export const sourceTypeSchema = z.enum(['editorial', 'community', 'adult_educational']);
 export const submissionStatusSchema = z.enum(['pending', 'approved', 'rejected']);
@@ -245,6 +245,7 @@ export const aiModelConfigSchema = z.object({
   translationModel: z.string(),
   askModel: z.string(),
   newsletterModel: z.string(),
+  ollamaBaseUrl: z.string().trim().url().or(z.literal('')),
   monthlyBudgetUsd: z.number().nonnegative(),
   perJobBudgetUsd: z.number().nonnegative(),
   autoDowngrade: z.boolean(),
@@ -319,7 +320,8 @@ export const aiCredentialStateSchema = z.object({
 export const adminAiCredentialStatusSchema = z.object({
   openai: aiCredentialStateSchema,
   anthropic: aiCredentialStateSchema,
-  openrouter: aiCredentialStateSchema
+  openrouter: aiCredentialStateSchema,
+  ollama: aiCredentialStateSchema
 });
 
 export const submissionDtoSchema = z.object({
@@ -1335,6 +1337,7 @@ export const DEMO_AI_CONFIG: AiModelConfig = {
   translationModel: 'gpt-4.1-mini',
   askModel: 'gpt-4.1-mini',
   newsletterModel: 'gpt-4.1-mini',
+  ollamaBaseUrl: '',
   monthlyBudgetUsd: 250,
   perJobBudgetUsd: 2.5,
   autoDowngrade: true,

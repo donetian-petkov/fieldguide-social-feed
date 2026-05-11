@@ -239,7 +239,7 @@ export const fieldguideApi = createApi({
     }),
     updateAdminAiCredential: builder.mutation<
       AdminAiCredentialsResponse,
-      { provider: AiModelConfig['provider']; apiKey?: string; clear?: boolean }
+      { provider: Exclude<AiModelConfig['provider'], 'ollama'>; apiKey?: string; clear?: boolean }
     >({
       query: (body) => ({
         url: '/v1/admin/ai/credentials',

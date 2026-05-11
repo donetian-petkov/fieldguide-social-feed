@@ -391,19 +391,23 @@ function buildItemDto(item: ItemWithRelations, appUrl: string): ContentItem {
 }
 
 function buildAiUsageSummary(entries: Array<{
+  provider: AiModelConfig['provider'];
   model: string;
   inputTokens: number;
   outputTokens: number;
   recordedCostUsd: number;
 }>, startsAt: Date): AdminAiUsageSummary {
   const grouped = new Map<string, {
+    provider: AiModelConfig['provider'];
     inputTokens: number;
     outputTokens: number;
     recordedCostUsd: number;
   }>();
 
   for (const entry of entries) {
-    const current = grouped.get(entry.model) || {
+    const key = `${entry.provider}::${entry.model}`;
+    const current = grouped.get(key) || {
+      provider: entry.provider,
       inputTokens: 0,
       outputTokens: 0,
       recordedCostUsd: 0
@@ -411,29 +415,40 @@ function buildAiUsageSummary(entries: Array<{
     current.inputTokens += entry.inputTokens;
     current.outputTokens += entry.outputTokens;
     current.recordedCostUsd += entry.recordedCostUsd;
-    grouped.set(entry.model, current);
+    grouped.set(key, current);
   }
 
   const lineItems = [...grouped.entries()]
-    .map(([model, totals]) => {
-      const pricing = resolveModelPricing(model);
+    .map(([groupKey, totals]) => {
+      const model = groupKey.slice(groupKey.indexOf('::') + 2);
+      const pricing = resolveModelPricing(model, totals.provider);
       return {
+        provider: totals.provider,
         model,
         pricedAsModel: pricing.canonicalModel,
         exactModelMatch: pricing.exact,
         inputTokens: totals.inputTokens,
         outputTokens: totals.outputTokens,
-        totalCostUsd: estimateCostUsd(model, totals.inputTokens, totals.outputTokens),
+        totalCostUsd: estimateCostUsd(totals.provider, model, totals.inputTokens, totals.outputTokens),
         recordedCostUsd: Number(totals.recordedCostUsd.toFixed(6))
       };
     })
-    .sort((left, right) => right.totalCostUsd - left.totalCostUsd || left.model.localeCompare(right.model));
+    .sort(
+      (left, right) =>
+        right.totalCostUsd - left.totalCostUsd ||
+        left.provider.localeCompare(right.provider) ||
+        left.model.localeCompare(right.model)
+    );
 
   const inputTokens = lineItems.reduce((sum, entry) => sum + entry.inputTokens, 0);
   const outputTokens = lineItems.reduce((sum, entry) => sum + entry.outputTokens, 0);
   const totalCostUsd = Number(lineItems.reduce((sum, entry) => sum + entry.totalCostUsd, 0).toFixed(6));
   const recordedCostUsd = Number(lineItems.reduce((sum, entry) => sum + entry.recordedCostUsd, 0).toFixed(6));
-  const fallbackModels = [...new Set(lineItems.filter((entry) => !entry.exactModelMatch).map((entry) => entry.model))];
+  const fallbackModels = [
+    ...new Set(
+      lineItems.filter((entry) => !entry.exactModelMatch).map((entry) => `${entry.provider}:${entry.model}`)
+    )
+  ];
   const exactMatchCount = lineItems.filter((entry) => entry.exactModelMatch).length;
   const pricingConfidence =
     lineItems.length === 0 || exactMatchCount === lineItems.length
@@ -468,6 +483,7 @@ function usagePurposeLabel(purpose: AiUsageSnapshot['purpose']) {
 function buildAiUsageBreakdown(entries: Array<{
   createdAt: Date;
   purpose: AiUsageSnapshot['purpose'];
+  provider: AiModelConfig['provider'];
   model: string;
   inputTokens: number;
   outputTokens: number;
@@ -482,13 +498,13 @@ function buildAiUsageBreakdown(entries: Array<{
     const dayTotals = byDay.get(date) || { inputTokens: 0, outputTokens: 0, totalCostUsd: 0 };
     dayTotals.inputTokens += entry.inputTokens;
     dayTotals.outputTokens += entry.outputTokens;
-    dayTotals.totalCostUsd += estimateCostUsd(entry.model, entry.inputTokens, entry.outputTokens);
+    dayTotals.totalCostUsd += estimateCostUsd(entry.provider, entry.model, entry.inputTokens, entry.outputTokens);
     byDay.set(date, dayTotals);
 
     const purposeTotals = byPurpose.get(entry.purpose) || { inputTokens: 0, outputTokens: 0, totalCostUsd: 0 };
     purposeTotals.inputTokens += entry.inputTokens;
     purposeTotals.outputTokens += entry.outputTokens;
-    purposeTotals.totalCostUsd += estimateCostUsd(entry.model, entry.inputTokens, entry.outputTokens);
+    purposeTotals.totalCostUsd += estimateCostUsd(entry.provider, entry.model, entry.inputTokens, entry.outputTokens);
     byPurpose.set(entry.purpose, purposeTotals);
   }
 
@@ -607,6 +623,7 @@ function aiConfigToDto(config: Prisma.AiConfigGetPayload<Record<string, never>>)
     translationModel: config.translationModel,
     askModel: config.askModel,
     newsletterModel: config.newsletterModel,
+    ollamaBaseUrl: config.ollamaBaseUrl || '',
     monthlyBudgetUsd: Number(config.monthlyBudgetUsd),
     perJobBudgetUsd: Number(config.perJobBudgetUsd),
     autoDowngrade: config.autoDowngrade,
@@ -637,6 +654,7 @@ export class PrismaStore implements AppStore {
     OPENAI_API_KEY: string;
     ANTHROPIC_API_KEY: string;
     OPENROUTER_API_KEY: string;
+    OLLAMA_BASE_URL: string;
   };
 
   private readonly modeVerifications = new Map<string, number>();
@@ -655,6 +673,7 @@ export class PrismaStore implements AppStore {
         OPENAI_API_KEY?: string;
         ANTHROPIC_API_KEY?: string;
         OPENROUTER_API_KEY?: string;
+        OLLAMA_BASE_URL?: string;
       };
     }
   ) {
@@ -664,7 +683,8 @@ export class PrismaStore implements AppStore {
     this.aiKeys = {
       OPENAI_API_KEY: options.aiKeys.OPENAI_API_KEY || '',
       ANTHROPIC_API_KEY: options.aiKeys.ANTHROPIC_API_KEY || '',
-      OPENROUTER_API_KEY: options.aiKeys.OPENROUTER_API_KEY || ''
+      OPENROUTER_API_KEY: options.aiKeys.OPENROUTER_API_KEY || '',
+      OLLAMA_BASE_URL: options.aiKeys.OLLAMA_BASE_URL || ''
     };
   }
 
@@ -1724,10 +1744,10 @@ export class PrismaStore implements AppStore {
     }
 
     let model = aiConfig.askModel;
-    let estimatedCost = estimateCostUsd(model, estimatedInput, estimatedOutput);
+    let estimatedCost = estimateCostUsd(aiConfig.provider, model, estimatedInput, estimatedOutput);
     if (aiConfig.autoDowngrade && estimatedCost > aiConfig.perJobBudgetUsd) {
       model = fallbackModelForProvider(aiConfig.provider);
-      estimatedCost = estimateCostUsd(model, estimatedInput, estimatedOutput);
+      estimatedCost = estimateCostUsd(aiConfig.provider, model, estimatedInput, estimatedOutput);
     }
 
     const monthlySpent = await this.getMonthlyAiSpendUsd();
@@ -1770,7 +1790,7 @@ export class PrismaStore implements AppStore {
         maxOutputTokens: estimatedOutput,
         keys: aiKeys
       });
-      const finalCost = estimateCostUsd(model, completion.inputTokens, completion.outputTokens);
+      const finalCost = estimateCostUsd(aiConfig.provider, model, completion.inputTokens, completion.outputTokens);
       await this.prisma.aiUsageLedger.create({
         data: {
           itemId: item.id,
@@ -1837,7 +1857,8 @@ export class PrismaStore implements AppStore {
       select: {
         openaiApiKeyCiphertext: true,
         anthropicApiKeyCiphertext: true,
-        openrouterApiKeyCiphertext: true
+        openrouterApiKeyCiphertext: true,
+        ollamaBaseUrl: true
       }
     });
     return this.resolveRuntimeAiKeys(row);
@@ -1947,6 +1968,7 @@ export class PrismaStore implements AppStore {
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const usage = await this.prisma.aiUsageLedger.findMany({
       select: {
+        provider: true,
         model: true,
         inputTokens: true,
         outputTokens: true,
@@ -1961,6 +1983,7 @@ export class PrismaStore implements AppStore {
 
     return buildAiUsageSummary(
       usage.map((entry) => ({
+        provider: entry.provider as AiModelConfig['provider'],
         model: entry.model,
         inputTokens: entry.inputTokens,
         outputTokens: entry.outputTokens,
@@ -1977,6 +2000,7 @@ export class PrismaStore implements AppStore {
       select: {
         createdAt: true,
         purpose: true,
+        provider: true,
         model: true,
         inputTokens: true,
         outputTokens: true,
@@ -1996,6 +2020,7 @@ export class PrismaStore implements AppStore {
       usage.map((entry) => ({
         createdAt: entry.createdAt,
         purpose: entry.purpose as AiUsageSnapshot['purpose'],
+        provider: entry.provider as AiModelConfig['provider'],
         model: entry.model,
         inputTokens: entry.inputTokens,
         outputTokens: entry.outputTokens,
@@ -2013,7 +2038,8 @@ export class PrismaStore implements AppStore {
       select: {
         openaiApiKeyCiphertext: true,
         anthropicApiKeyCiphertext: true,
-        openrouterApiKeyCiphertext: true
+        openrouterApiKeyCiphertext: true,
+        ollamaBaseUrl: true
       }
     });
     const runtimeKeys = this.resolveRuntimeAiKeys(row);
@@ -2031,11 +2057,18 @@ export class PrismaStore implements AppStore {
       openrouter: {
         configured: Boolean(runtimeKeys.OPENROUTER_API_KEY),
         source: storedKeys.OPENROUTER_API_KEY ? 'database' : this.aiKeys.OPENROUTER_API_KEY ? 'environment' : 'none'
+      },
+      ollama: {
+        configured: Boolean(runtimeKeys.OLLAMA_BASE_URL),
+        source: storedKeys.OLLAMA_BASE_URL ? 'database' : this.aiKeys.OLLAMA_BASE_URL ? 'environment' : 'none'
       }
     };
   }
 
   async setAdminAiProviderKey(provider: AiModelConfig['provider'], apiKey: string | null) {
+    if (provider === 'ollama') {
+      throw new Error('Local Ollama uses the base URL field in AI config, not the provider key form.');
+    }
     const ciphertext = apiKey?.trim() ? encryptAiSecret(apiKey.trim(), this.encryptionSecret) : null;
     const credentialPatch =
       provider === 'anthropic'
@@ -2054,6 +2087,7 @@ export class PrismaStore implements AppStore {
         translationModel: DEMO_AI_CONFIG.translationModel,
         askModel: DEMO_AI_CONFIG.askModel,
         newsletterModel: DEMO_AI_CONFIG.newsletterModel,
+        ollamaBaseUrl: DEMO_AI_CONFIG.ollamaBaseUrl || null,
         monthlyBudgetUsd: DEMO_AI_CONFIG.monthlyBudgetUsd,
         perJobBudgetUsd: DEMO_AI_CONFIG.perJobBudgetUsd,
         autoDowngrade: DEMO_AI_CONFIG.autoDowngrade,
@@ -2783,6 +2817,7 @@ export class PrismaStore implements AppStore {
         translationModel: next.translationModel,
         askModel: next.askModel,
         newsletterModel: next.newsletterModel,
+        ollamaBaseUrl: next.ollamaBaseUrl || null,
         monthlyBudgetUsd: next.monthlyBudgetUsd,
         perJobBudgetUsd: next.perJobBudgetUsd,
         autoDowngrade: next.autoDowngrade,
@@ -2794,6 +2829,7 @@ export class PrismaStore implements AppStore {
         translationModel: next.translationModel,
         askModel: next.askModel,
         newsletterModel: next.newsletterModel,
+        ollamaBaseUrl: next.ollamaBaseUrl || null,
         monthlyBudgetUsd: next.monthlyBudgetUsd,
         perJobBudgetUsd: next.perJobBudgetUsd,
         autoDowngrade: next.autoDowngrade,
@@ -2990,6 +3026,7 @@ export class PrismaStore implements AppStore {
           openaiApiKeyCiphertext: string | null;
           anthropicApiKeyCiphertext: string | null;
           openrouterApiKeyCiphertext: string | null;
+          ollamaBaseUrl: string | null;
         }
       | null
       | undefined
@@ -2997,7 +3034,8 @@ export class PrismaStore implements AppStore {
     return {
       OPENAI_API_KEY: decryptAiSecret(row?.openaiApiKeyCiphertext, this.encryptionSecret),
       ANTHROPIC_API_KEY: decryptAiSecret(row?.anthropicApiKeyCiphertext, this.encryptionSecret),
-      OPENROUTER_API_KEY: decryptAiSecret(row?.openrouterApiKeyCiphertext, this.encryptionSecret)
+      OPENROUTER_API_KEY: decryptAiSecret(row?.openrouterApiKeyCiphertext, this.encryptionSecret),
+      OLLAMA_BASE_URL: row?.ollamaBaseUrl || ''
     };
   }
 
@@ -3007,6 +3045,7 @@ export class PrismaStore implements AppStore {
           openaiApiKeyCiphertext: string | null;
           anthropicApiKeyCiphertext: string | null;
           openrouterApiKeyCiphertext: string | null;
+          ollamaBaseUrl: string | null;
         }
       | null
       | undefined
@@ -3015,7 +3054,8 @@ export class PrismaStore implements AppStore {
     return {
       OPENAI_API_KEY: storedKeys.OPENAI_API_KEY || this.aiKeys.OPENAI_API_KEY,
       ANTHROPIC_API_KEY: storedKeys.ANTHROPIC_API_KEY || this.aiKeys.ANTHROPIC_API_KEY,
-      OPENROUTER_API_KEY: storedKeys.OPENROUTER_API_KEY || this.aiKeys.OPENROUTER_API_KEY
+      OPENROUTER_API_KEY: storedKeys.OPENROUTER_API_KEY || this.aiKeys.OPENROUTER_API_KEY,
+      OLLAMA_BASE_URL: storedKeys.OLLAMA_BASE_URL || this.aiKeys.OLLAMA_BASE_URL
     };
   }
 
@@ -3109,10 +3149,10 @@ export class PrismaStore implements AppStore {
       return null;
     }
     let model = aiConfig.askModel;
-    let estimatedCost = estimateCostUsd(model, estimatedInput, estimatedOutput);
+    let estimatedCost = estimateCostUsd(aiConfig.provider, model, estimatedInput, estimatedOutput);
     if (aiConfig.autoDowngrade && estimatedCost > aiConfig.perJobBudgetUsd) {
       model = fallbackModelForProvider(aiConfig.provider);
-      estimatedCost = estimateCostUsd(model, estimatedInput, estimatedOutput);
+      estimatedCost = estimateCostUsd(aiConfig.provider, model, estimatedInput, estimatedOutput);
     }
 
     const monthlySpent = await this.getMonthlyAiSpendUsd();
@@ -3150,7 +3190,7 @@ export class PrismaStore implements AppStore {
           purpose: 'related',
           inputTokens: completion.inputTokens,
           outputTokens: completion.outputTokens,
-          totalCostUsd: estimateCostUsd(model, completion.inputTokens, completion.outputTokens)
+          totalCostUsd: estimateCostUsd(aiConfig.provider, model, completion.inputTokens, completion.outputTokens)
         }
       });
       this.writeCache(this.relatedRerankCache, rerankCacheKey, RELATED_RERANK_CACHE_TTL_MS, finalItems);

@@ -26,6 +26,7 @@ export type RuntimeAiKeys = {
   OPENAI_API_KEY: string;
   ANTHROPIC_API_KEY: string;
   OPENROUTER_API_KEY: string;
+  OLLAMA_BASE_URL: string;
 };
 
 export type RegisterInput = {

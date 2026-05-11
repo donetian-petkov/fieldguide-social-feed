@@ -46,14 +46,24 @@ const SUBJECT_OPTIONS: Array<{ value: SubjectTag; label: string }> = [
 const PROVIDER_LABELS: Record<AiModelConfig['provider'], string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic',
-  openrouter: 'OpenRouter'
+  openrouter: 'OpenRouter',
+  ollama: 'Ollama (local)'
 };
 
 const EMPTY_CREDENTIALS = {
   openai: { configured: false, source: 'none' as const },
   anthropic: { configured: false, source: 'none' as const },
-  openrouter: { configured: false, source: 'none' as const }
+  openrouter: { configured: false, source: 'none' as const },
+  ollama: { configured: false, source: 'none' as const }
 };
+
+function isLocalProvider(provider: AiModelConfig['provider']) {
+  return provider === 'ollama';
+}
+
+function isCloudProvider(provider: AiModelConfig['provider']): provider is Exclude<AiModelConfig['provider'], 'ollama'> {
+  return provider !== 'ollama';
+}
 
 function draftStatusCopy(draft: GeneratedStoryDraftDto) {
   if (draft.status === 'queued') return 'Queued for worker generation';
@@ -65,6 +75,15 @@ function draftStatusCopy(draft: GeneratedStoryDraftDto) {
 
 function credentialStatusCopy(provider: AiModelConfig['provider'], state: { configured: boolean; source: 'none' | 'environment' | 'database' }) {
   const providerLabel = PROVIDER_LABELS[provider];
+  if (provider === 'ollama') {
+    if (state.source === 'database') {
+      return 'Ollama is using a base URL stored in the database. Saving AI config updates it immediately.';
+    }
+    if (state.source === 'environment') {
+      return 'Ollama is currently using a base URL from the server environment. Saving AI config here overrides the env value without a restart.';
+    }
+    return 'No Ollama base URL is configured. The site still works without AI, and local AI stays disabled until you save a base URL such as http://127.0.0.1:11434.';
+  }
   if (state.source === 'database') {
     return `${providerLabel} is using a key stored in the database. Saving a new one here replaces it immediately.`;
   }
@@ -91,6 +110,7 @@ export default function AdminAiPage() {
   const [storySubject, setStorySubject] = useState<SubjectTag>('history');
   const [storyPrompt, setStoryPrompt] = useState('');
   const aiAvailable = Boolean(healthQuery.data?.aiAvailable);
+  const providerIsLocal = isLocalProvider(form.provider);
   const selectedCredential = (credentialsQuery.data?.credentials || EMPTY_CREDENTIALS)[form.provider];
 
   useEffect(() => {
@@ -136,6 +156,7 @@ export default function AdminAiPage() {
   }
 
   async function handleSaveProviderKey() {
+    if (!isCloudProvider(form.provider)) return;
     try {
       await updateAdminAiCredential({
         provider: form.provider,
@@ -149,6 +170,7 @@ export default function AdminAiPage() {
   }
 
   async function handleClearProviderKey() {
+    if (!isCloudProvider(form.provider)) return;
     try {
       await updateAdminAiCredential({
         provider: form.provider,
@@ -179,7 +201,7 @@ export default function AdminAiPage() {
         {!aiAvailable ? (
           <Box sx={{ gridColumn: { xs: 'auto', md: '1 / -1' } }}>
             <Alert severity="info">
-              AI is currently disabled. The site still works without it. Save a provider key here to enable Ask AI, AI enrichment, generated stories, and live usage.
+              AI is currently disabled. The site still works without it. Save a cloud provider key or a local Ollama base URL here to enable Ask AI, AI enrichment, generated stories, and live usage.
             </Alert>
           </Box>
         ) : null}
@@ -195,35 +217,53 @@ export default function AdminAiPage() {
                 <MenuItem value="openai">OpenAI</MenuItem>
                 <MenuItem value="anthropic">Anthropic</MenuItem>
                 <MenuItem value="openrouter">OpenRouter</MenuItem>
+                <MenuItem value="ollama">Ollama (local)</MenuItem>
               </TextField>
               <Alert severity={selectedCredential.configured ? 'success' : 'warning'}>
                 {credentialStatusCopy(form.provider, selectedCredential)}
               </Alert>
-              <TextField
-                label={`${PROVIDER_LABELS[form.provider]} API key`}
-                type="password"
-                value={providerApiKey}
-                onChange={(event) => setProviderApiKey(event.target.value)}
-                autoComplete="new-password"
-                helperText="Keys are stored server-side and never returned to the browser after save."
-              />
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                <Button
-                  variant="contained"
-                  onClick={() => void handleSaveProviderKey()}
-                  disabled={credentialState.isLoading || providerApiKey.trim().length < 8}
-                >
-                  {credentialState.isLoading ? 'Saving key...' : 'Save Provider Key'}
-                </Button>
-                <Button
-                  variant="outlined"
-                  color="inherit"
-                  onClick={() => void handleClearProviderKey()}
-                  disabled={credentialState.isLoading || selectedCredential.source !== 'database'}
-                >
-                  Clear Stored Key
-                </Button>
-              </Stack>
+              {providerIsLocal ? (
+                <>
+                  <TextField
+                    label="Ollama base URL"
+                    value={form.ollamaBaseUrl}
+                    onChange={(event) => setField('ollamaBaseUrl', event.target.value)}
+                    placeholder="http://127.0.0.1:11434"
+                    helperText="Use the local Ollama server URL. The app automatically calls its /api endpoints."
+                  />
+                  <Alert severity={selectedCredential.configured && !aiAvailable ? 'warning' : 'info'}>
+                    Install or start Ollama, pull the models you want, then save this config. Example: `ollama serve` and `ollama pull llama3.1:8b`.
+                  </Alert>
+                </>
+              ) : (
+                <>
+                  <TextField
+                    label={`${PROVIDER_LABELS[form.provider]} API key`}
+                    type="password"
+                    value={providerApiKey}
+                    onChange={(event) => setProviderApiKey(event.target.value)}
+                    autoComplete="new-password"
+                    helperText="Keys are stored server-side and never returned to the browser after save."
+                  />
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                    <Button
+                      variant="contained"
+                      onClick={() => void handleSaveProviderKey()}
+                      disabled={credentialState.isLoading || providerApiKey.trim().length < 8}
+                    >
+                      {credentialState.isLoading ? 'Saving key...' : 'Save Provider Key'}
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      color="inherit"
+                      onClick={() => void handleClearProviderKey()}
+                      disabled={credentialState.isLoading || selectedCredential.source !== 'database'}
+                    >
+                      Clear Stored Key
+                    </Button>
+                  </Stack>
+                </>
+              )}
               <Divider />
               <TextField
                 label="Summary model"

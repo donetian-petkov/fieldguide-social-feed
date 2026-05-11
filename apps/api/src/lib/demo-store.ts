@@ -62,13 +62,15 @@ function emptyRuntimeAiKeys() {
   return {
     OPENAI_API_KEY: '',
     ANTHROPIC_API_KEY: '',
-    OPENROUTER_API_KEY: ''
+    OPENROUTER_API_KEY: '',
+    OLLAMA_BASE_URL: ''
   };
 }
 
 function providerKeyField(provider: ProviderApiKey): keyof ReturnType<typeof emptyRuntimeAiKeys> {
   if (provider === 'anthropic') return 'ANTHROPIC_API_KEY';
   if (provider === 'openrouter') return 'OPENROUTER_API_KEY';
+  if (provider === 'ollama') return 'OLLAMA_BASE_URL';
   return 'OPENAI_API_KEY';
 }
 
@@ -103,13 +105,16 @@ function normalizeExternalUrl(candidateUrl: string | null | undefined, appUrl: s
 
 function buildAiUsageSummary(entries: AiUsageSnapshot[], startsAt: Date): AdminAiUsageSummary {
   const grouped = new Map<string, {
+    provider: AiUsageSnapshot['provider'];
     inputTokens: number;
     outputTokens: number;
     recordedCostUsd: number;
   }>();
 
   for (const entry of entries) {
-    const current = grouped.get(entry.model) || {
+    const key = `${entry.provider}::${entry.model}`;
+    const current = grouped.get(key) || {
+      provider: entry.provider,
       inputTokens: 0,
       outputTokens: 0,
       recordedCostUsd: 0
@@ -117,29 +122,40 @@ function buildAiUsageSummary(entries: AiUsageSnapshot[], startsAt: Date): AdminA
     current.inputTokens += entry.inputTokens;
     current.outputTokens += entry.outputTokens;
     current.recordedCostUsd += entry.totalCostUsd;
-    grouped.set(entry.model, current);
+    grouped.set(key, current);
   }
 
   const lineItems = [...grouped.entries()]
-    .map(([model, totals]) => {
-      const pricing = resolveModelPricing(model);
+    .map(([groupKey, totals]) => {
+      const model = groupKey.slice(groupKey.indexOf('::') + 2);
+      const pricing = resolveModelPricing(model, totals.provider);
       return {
+        provider: totals.provider,
         model,
         pricedAsModel: pricing.canonicalModel,
         exactModelMatch: pricing.exact,
         inputTokens: totals.inputTokens,
         outputTokens: totals.outputTokens,
-        totalCostUsd: estimateCostUsd(model, totals.inputTokens, totals.outputTokens),
+        totalCostUsd: estimateCostUsd(totals.provider, model, totals.inputTokens, totals.outputTokens),
         recordedCostUsd: Number(totals.recordedCostUsd.toFixed(6))
       };
     })
-    .sort((left, right) => right.totalCostUsd - left.totalCostUsd || left.model.localeCompare(right.model));
+    .sort(
+      (left, right) =>
+        right.totalCostUsd - left.totalCostUsd ||
+        left.provider.localeCompare(right.provider) ||
+        left.model.localeCompare(right.model)
+    );
 
   const inputTokens = lineItems.reduce((sum, entry) => sum + entry.inputTokens, 0);
   const outputTokens = lineItems.reduce((sum, entry) => sum + entry.outputTokens, 0);
   const totalCostUsd = Number(lineItems.reduce((sum, entry) => sum + entry.totalCostUsd, 0).toFixed(6));
   const recordedCostUsd = Number(lineItems.reduce((sum, entry) => sum + entry.recordedCostUsd, 0).toFixed(6));
-  const fallbackModels = [...new Set(lineItems.filter((entry) => !entry.exactModelMatch).map((entry) => entry.model))];
+  const fallbackModels = [
+    ...new Set(
+      lineItems.filter((entry) => !entry.exactModelMatch).map((entry) => `${entry.provider}:${entry.model}`)
+    )
+  ];
   const exactMatchCount = lineItems.filter((entry) => entry.exactModelMatch).length;
   const pricingConfidence =
     lineItems.length === 0 || exactMatchCount === lineItems.length
@@ -248,6 +264,7 @@ export class DemoStore {
     OPENAI_API_KEY: string;
     ANTHROPIC_API_KEY: string;
     OPENROUTER_API_KEY: string;
+    OLLAMA_BASE_URL: string;
   };
 
   private storedAiKeys = emptyRuntimeAiKeys();
@@ -305,6 +322,7 @@ export class DemoStore {
       OPENAI_API_KEY: string;
       ANTHROPIC_API_KEY: string;
       OPENROUTER_API_KEY: string;
+      OLLAMA_BASE_URL: string;
     }>;
   }) {
     this.sessionTtlMs = options.sessionTtlHours * 60 * 60 * 1000;
@@ -832,7 +850,8 @@ export class DemoStore {
     return {
       OPENAI_API_KEY: this.storedAiKeys.OPENAI_API_KEY || this.envAiKeys.OPENAI_API_KEY,
       ANTHROPIC_API_KEY: this.storedAiKeys.ANTHROPIC_API_KEY || this.envAiKeys.ANTHROPIC_API_KEY,
-      OPENROUTER_API_KEY: this.storedAiKeys.OPENROUTER_API_KEY || this.envAiKeys.OPENROUTER_API_KEY
+      OPENROUTER_API_KEY: this.storedAiKeys.OPENROUTER_API_KEY || this.envAiKeys.OPENROUTER_API_KEY,
+      OLLAMA_BASE_URL: this.storedAiKeys.OLLAMA_BASE_URL || this.envAiKeys.OLLAMA_BASE_URL
     };
   }
 
@@ -878,6 +897,10 @@ export class DemoStore {
       openrouter: {
         configured: Boolean(runtimeKeys.OPENROUTER_API_KEY),
         source: this.storedAiKeys.OPENROUTER_API_KEY ? 'database' : this.envAiKeys.OPENROUTER_API_KEY ? 'environment' : 'none'
+      },
+      ollama: {
+        configured: Boolean(runtimeKeys.OLLAMA_BASE_URL),
+        source: this.storedAiKeys.OLLAMA_BASE_URL ? 'database' : this.envAiKeys.OLLAMA_BASE_URL ? 'environment' : 'none'
       }
     };
   }

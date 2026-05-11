@@ -226,7 +226,8 @@ const PURPOSE_HARD_TOKEN_CAPS: Record<
 const envAiKeys = {
   OPENAI_API_KEY: config.OPENAI_API_KEY,
   ANTHROPIC_API_KEY: config.ANTHROPIC_API_KEY,
-  OPENROUTER_API_KEY: config.OPENROUTER_API_KEY
+  OPENROUTER_API_KEY: config.OPENROUTER_API_KEY,
+  OLLAMA_BASE_URL: config.OLLAMA_BASE_URL
 };
 
 const warnedAiStates = new Set<string>();
@@ -767,6 +768,7 @@ async function getAiConfig() {
     translationModel: stored.translationModel,
     askModel: stored.askModel,
     newsletterModel: stored.newsletterModel,
+    ollamaBaseUrl: stored.ollamaBaseUrl || '',
     monthlyBudgetUsd: Number(stored.monthlyBudgetUsd),
     perJobBudgetUsd: Number(stored.perJobBudgetUsd),
     autoDowngrade: stored.autoDowngrade,
@@ -782,18 +784,21 @@ async function getAiRuntimeKeys() {
     select: {
       openaiApiKeyCiphertext: true,
       anthropicApiKeyCiphertext: true,
-      openrouterApiKeyCiphertext: true
+      openrouterApiKeyCiphertext: true,
+      ollamaBaseUrl: true
     }
   });
   const storedKeys = {
     OPENAI_API_KEY: decryptAiSecret(stored?.openaiApiKeyCiphertext, config.COOKIE_SECRET),
     ANTHROPIC_API_KEY: decryptAiSecret(stored?.anthropicApiKeyCiphertext, config.COOKIE_SECRET),
-    OPENROUTER_API_KEY: decryptAiSecret(stored?.openrouterApiKeyCiphertext, config.COOKIE_SECRET)
+    OPENROUTER_API_KEY: decryptAiSecret(stored?.openrouterApiKeyCiphertext, config.COOKIE_SECRET),
+    OLLAMA_BASE_URL: stored?.ollamaBaseUrl || ''
   };
   return {
     OPENAI_API_KEY: storedKeys.OPENAI_API_KEY || envAiKeys.OPENAI_API_KEY,
     ANTHROPIC_API_KEY: storedKeys.ANTHROPIC_API_KEY || envAiKeys.ANTHROPIC_API_KEY,
-    OPENROUTER_API_KEY: storedKeys.OPENROUTER_API_KEY || envAiKeys.OPENROUTER_API_KEY
+    OPENROUTER_API_KEY: storedKeys.OPENROUTER_API_KEY || envAiKeys.OPENROUTER_API_KEY,
+    OLLAMA_BASE_URL: storedKeys.OLLAMA_BASE_URL || envAiKeys.OLLAMA_BASE_URL
   };
 }
 
@@ -988,7 +993,7 @@ function chooseBudgetedModel(input: {
     cost <= input.budget.remainingJobBudgetUsd &&
     (input.budget.remainingMonthlyBudgetUsd === null || cost <= input.budget.remainingMonthlyBudgetUsd);
 
-  const configuredCost = estimateCostUsd(input.configuredModel, input.inputTokens, input.outputTokens);
+  const configuredCost = estimateCostUsd(input.provider, input.configuredModel, input.inputTokens, input.outputTokens);
   if (fitsBudget(configuredCost)) {
     return {
       model: input.configuredModel,
@@ -1002,7 +1007,7 @@ function chooseBudgetedModel(input: {
   }
 
   const fallbackModel = fallbackModelForProvider(input.provider);
-  const fallbackCost = estimateCostUsd(fallbackModel, input.inputTokens, input.outputTokens);
+  const fallbackCost = estimateCostUsd(input.provider, fallbackModel, input.inputTokens, input.outputTokens);
   if (!fitsBudget(fallbackCost)) {
     return null;
   }
@@ -1032,7 +1037,7 @@ async function runBudgetedCompletion<T>(input: {
   if (!hasProviderKey(input.provider, aiKeys)) {
     await recordUniqueAiWarning(
       `missing-key:${input.provider}`,
-      `AI fallback active: missing API key for provider ${input.provider}.`
+      `AI fallback active: missing configuration for provider ${input.provider}.`
     );
     return null;
   }
@@ -1081,7 +1086,7 @@ async function runBudgetedCompletion<T>(input: {
       maxOutputTokens: input.maxOutputTokens,
       keys: aiKeys
     });
-    const totalCostUsd = estimateCostUsd(selection.model, completion.inputTokens, completion.outputTokens);
+    const totalCostUsd = estimateCostUsd(input.provider, selection.model, completion.inputTokens, completion.outputTokens);
     input.budget.remainingJobBudgetUsd = Math.max(0, input.budget.remainingJobBudgetUsd - totalCostUsd);
     if (input.budget.remainingMonthlyBudgetUsd !== null) {
       input.budget.remainingMonthlyBudgetUsd = Math.max(0, input.budget.remainingMonthlyBudgetUsd - totalCostUsd);

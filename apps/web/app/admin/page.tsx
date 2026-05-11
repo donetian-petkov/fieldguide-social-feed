@@ -49,7 +49,7 @@ export default function AdminPage() {
       metric: aiAvailable ? model.aiConfig.provider.toUpperCase() : 'Disabled',
       description: aiAvailable
         ? 'Change provider and models, inspect spend, and review generated story drafts.'
-        : 'AI is currently disabled. Core site features still work; add a provider key here to enable AI features.',
+        : 'AI is currently disabled. Core site features still work; add a provider key or local Ollama base URL here to enable AI features.',
       href: '/admin/ai',
       cta: aiAvailable ? 'Open AI controls' : 'Enable AI'
     },

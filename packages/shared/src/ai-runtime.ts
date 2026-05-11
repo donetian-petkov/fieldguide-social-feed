@@ -1,15 +1,18 @@
 import { z } from 'zod';
 
 export type AiProviderLike = 'openai' | 'anthropic' | 'openrouter';
+export type LocalAiProviderLike = 'ollama';
+export type AnyAiProviderLike = AiProviderLike | LocalAiProviderLike;
 
 export type AiRuntimeKeys = {
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
+  OLLAMA_BASE_URL?: string;
 };
 
 export type CompletionInput = {
-  provider: AiProviderLike;
+  provider: AnyAiProviderLike;
   model: string;
   systemPrompt: string;
   userPrompt: string;
@@ -44,6 +47,14 @@ type OpenAiCompatibleResponse = {
     prompt_tokens?: number;
     completion_tokens?: number;
   };
+};
+
+type OllamaChatResponse = {
+  message?: {
+    content?: string;
+  };
+  prompt_eval_count?: number;
+  eval_count?: number;
 };
 
 export const PRICING_TABLE_VERSION = '2026-04-24';
@@ -82,7 +93,15 @@ export type ModelPricingResolution = {
   exact: boolean;
 };
 
-export function resolveModelPricing(model: string): ModelPricingResolution {
+export function resolveModelPricing(model: string, provider: AnyAiProviderLike = 'openai'): ModelPricingResolution {
+  if (provider === 'ollama') {
+    return {
+      canonicalModel: clean(model) || 'ollama-local',
+      inputPer1M: 0,
+      outputPer1M: 0,
+      exact: true
+    };
+  }
   const normalized = clean(model).toLowerCase();
   const exact = MODEL_PRICING_USD.find((entry) =>
     entry.aliases.some((alias) => alias.toLowerCase() === normalized || normalized.startsWith(`${alias.toLowerCase()}-`))
@@ -136,23 +155,36 @@ export function estimateTokens(text: string) {
   return Math.max(1, Math.ceil(words * 1.3));
 }
 
-export function estimateCostUsd(model: string, inputTokens: number, outputTokens: number) {
-  const pricing = resolveModelPricing(model);
+export function estimateCostUsd(
+  provider: AnyAiProviderLike,
+  model: string,
+  inputTokens: number,
+  outputTokens: number
+) {
+  const pricing = resolveModelPricing(model, provider);
   const inputCost = (pricing.inputPer1M / 1_000_000) * inputTokens;
   const outputCost = (pricing.outputPer1M / 1_000_000) * outputTokens;
   return Number((inputCost + outputCost).toFixed(6));
 }
 
-export function fallbackModelForProvider(provider: AiProviderLike) {
+export function fallbackModelForProvider(provider: AnyAiProviderLike) {
   if (provider === 'anthropic') return 'claude-3-5-haiku-latest';
   if (provider === 'openrouter') return 'openai/gpt-4o-mini';
+  if (provider === 'ollama') return 'llama3.1:8b';
   return 'gpt-4.1-mini';
 }
 
-export function hasProviderKey(provider: AiProviderLike, keys: AiRuntimeKeys) {
+export function hasProviderKey(provider: AnyAiProviderLike, keys: AiRuntimeKeys) {
   if (provider === 'anthropic') return Boolean(clean(keys.ANTHROPIC_API_KEY));
   if (provider === 'openrouter') return Boolean(clean(keys.OPENROUTER_API_KEY));
+  if (provider === 'ollama') return Boolean(clean(keys.OLLAMA_BASE_URL));
   return Boolean(clean(keys.OPENAI_API_KEY));
+}
+
+export function normalizeOllamaBaseUrl(baseUrl?: string | null) {
+  const normalized = clean(baseUrl).replace(/\/+$/, '');
+  if (!normalized) return '';
+  return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
 }
 
 async function openAiCompatibleCompletion(input: CompletionInput) {
@@ -251,9 +283,81 @@ async function anthropicCompletion(input: CompletionInput) {
   };
 }
 
+async function ollamaCompletion(input: CompletionInput) {
+  const apiBaseUrl = normalizeOllamaBaseUrl(input.keys.OLLAMA_BASE_URL);
+  if (!apiBaseUrl) {
+    throw new Error('Missing Ollama base URL.');
+  }
+
+  const response = await fetch(`${apiBaseUrl}/chat`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: input.model,
+      stream: false,
+      messages: [
+        { role: 'system', content: input.systemPrompt },
+        { role: 'user', content: input.userPrompt }
+      ],
+      options: {
+        temperature: input.temperature ?? 0.2,
+        num_predict: input.maxOutputTokens ?? 280
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = clean((await response.text()).slice(0, 300));
+    throw new Error(
+      `Ollama request failed with status ${response.status}${errorText ? `: ${errorText}` : '.'}`
+    );
+  }
+
+  const payload = (await response.json()) as OllamaChatResponse;
+  const text = clean(payload.message?.content);
+  if (!text) {
+    throw new Error('Empty Ollama response.');
+  }
+
+  return {
+    text,
+    inputTokens: payload.prompt_eval_count || estimateTokens(`${input.systemPrompt}\n${input.userPrompt}`),
+    outputTokens: payload.eval_count || estimateTokens(text)
+  };
+}
+
+export async function isProviderAvailable(
+  provider: AnyAiProviderLike,
+  keys: AiRuntimeKeys,
+  options?: { timeoutMs?: number }
+) {
+  if (provider !== 'ollama') {
+    return hasProviderKey(provider, keys);
+  }
+
+  const apiBaseUrl = normalizeOllamaBaseUrl(keys.OLLAMA_BASE_URL);
+  if (!apiBaseUrl) {
+    return false;
+  }
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/tags`, {
+      signal: AbortSignal.timeout(options?.timeoutMs ?? 1500)
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function runCompletion(input: CompletionInput): Promise<CompletionResult> {
   if (input.provider === 'anthropic') {
     return anthropicCompletion(input);
+  }
+  if (input.provider === 'ollama') {
+    return ollamaCompletion(input);
   }
   return openAiCompatibleCompletion(input);
 }

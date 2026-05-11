@@ -24,6 +24,7 @@ const repoManagedEnvKeys = [
   'OPENAI_API_KEY',
   'ANTHROPIC_API_KEY',
   'OPENROUTER_API_KEY',
+  'OLLAMA_BASE_URL',
   'ENABLE_EMAIL'
 ];
 
@@ -71,7 +72,7 @@ const envSchema = z.object({
     .optional()
     .default('false')
     .transform((value) => value === 'true'),
-  DEFAULT_AI_PROVIDER: z.enum(['openai', 'anthropic', 'openrouter']).default('openai'),
+  DEFAULT_AI_PROVIDER: z.enum(['openai', 'anthropic', 'openrouter', 'ollama']).default('openai'),
   SUMMARY_MODEL: z.string().default('gpt-4.1-mini'),
   TRANSLATION_MODEL: z.string().default('gpt-4.1-mini'),
   ASK_MODEL: z.string().default('gpt-4.1-mini'),
@@ -79,6 +80,7 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional().default(''),
   ANTHROPIC_API_KEY: z.string().optional().default(''),
   OPENROUTER_API_KEY: z.string().optional().default(''),
+  OLLAMA_BASE_URL: z.string().optional().default(''),
   ENABLE_EMAIL: z
     .string()
     .optional()

@@ -17,6 +17,7 @@ const repoManagedEnvKeys = [
   'OPENAI_API_KEY',
   'ANTHROPIC_API_KEY',
   'OPENROUTER_API_KEY',
+  'OLLAMA_BASE_URL',
   'RESEND_API_KEY',
   'EMAIL_FROM',
   'ENABLE_EMAIL',
@@ -72,6 +73,7 @@ const workerEnvSchema = z.object({
   OPENAI_API_KEY: z.string().optional().default(''),
   ANTHROPIC_API_KEY: z.string().optional().default(''),
   OPENROUTER_API_KEY: z.string().optional().default(''),
+  OLLAMA_BASE_URL: z.string().optional().default(''),
   RESEND_API_KEY: z.string().optional().default(''),
   EMAIL_FROM: z.string().default('Fieldguide <noreply@example.com>'),
   ENABLE_EMAIL: z
