@@ -1,4 +1,4 @@
-# Fieldguide Educational Feed Educational Feed
+# Fieldguide Educational Feed
 
 Fieldguide Educational Feed is a full-stack educational social feed for history, art, books, movies, country knowledge, photography, nature, and educational video. It ships curated editorial feeds separately from moderated community posts, with EN/BG content modes, saved libraries, albums, flat comments, Ask-AI, newsletters, and an admin console for sources, moderation, users, AI budgets, and logs.
 
