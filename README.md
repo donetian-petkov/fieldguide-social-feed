@@ -1,6 +1,6 @@
-# Fieldguide
+# Fieldguide Knowledge Feed
 
-Fieldguide is a full-stack educational social feed for history, art, books, movies, country knowledge, photography, nature, and educational video. It ships curated editorial feeds separately from moderated community posts, with EN/BG content modes, saved libraries, albums, flat comments, Ask-AI, newsletters, and an admin console for sources, moderation, users, AI budgets, and logs.
+Fieldguide Knowledge Feed is a full-stack educational knowledge and social feed for history, art, books, movies, country knowledge, photography, nature, and educational video. It ships curated editorial feeds separately from moderated community posts, with EN/BG content modes, saved libraries, albums, flat comments, Ask-AI, newsletters, and an admin console for sources, moderation, users, AI budgets, and logs.
 
 ![History feed with pinned educational stories](docs/screenshots/feed-history.png)
 
