@@ -16,7 +16,7 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerFeedRoutes } from './routes/feed.js';
 import { registerItemRoutes } from './routes/items.js';
-import { registerMediaRoutes } from './routes/media.js';
+import { registerMediaRoutes, type MediaFetch } from './routes/media.js';
 import { registerMeRoutes } from './routes/me.js';
 import { registerRuntimeRoutes } from './routes/runtime.js';
 
@@ -30,6 +30,7 @@ export async function buildApp(options?: {
   config?: AppConfig;
   store?: AppStore;
   queues?: AppQueues;
+  mediaFetch?: MediaFetch;
 }) {
   const config = options?.config || getConfig();
   const app = Fastify({
@@ -96,7 +97,7 @@ export async function buildApp(options?: {
   }));
 
   await registerRuntimeRoutes(app);
-  await registerMediaRoutes(app);
+  await registerMediaRoutes(app, { fetchImage: options?.mediaFetch });
   await registerAuthRoutes(app, { store, config });
   await registerFeedRoutes(app, { store, queues });
   await registerItemRoutes(app, { store });

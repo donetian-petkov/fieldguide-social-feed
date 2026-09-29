@@ -17,6 +17,7 @@ import {
   runCompletion,
   subjectTagSchema
 } from '@edu-feed/shared';
+import { safeFetch } from '@edu-feed/shared/dist/safe-fetch.js';
 import Parser from 'rss-parser';
 import { Resend } from 'resend';
 import { z } from 'zod';
@@ -484,7 +485,7 @@ function collectAdapterCandidates(html: string, feed: SourceFeedRecord, adapter:
 async function enrichAdapterCandidate(entry: ParsedFeedItem) {
   if (!entry.link) return entry;
   try {
-    const response = await fetch(entry.link, {
+    const response = await safeFetch(entry.link, {
       headers: {
         'user-agent': 'FieldguideBot/0.1 (+https://fieldguide.local)'
       }
@@ -514,7 +515,7 @@ async function enrichAdapterCandidate(entry: ParsedFeedItem) {
 async function enrichLinkedFeedCandidate(entry: ParsedFeedItem) {
   if (!entry.link || extractEntryImageUrl(entry, entry.link)) return entry;
   try {
-    const response = await fetch(entry.link, {
+    const response = await safeFetch(entry.link, {
       headers: {
         'user-agent': 'FieldguideBot/0.1 (+https://fieldguide.local)'
       }
@@ -1140,7 +1141,8 @@ async function loadSourceFeed(payload: IngestionJobPayload) {
 }
 
 async function fetchFeed(feed: SourceFeedRecord) {
-  const response = await fetch(feed.feedUrl, {
+  const response = await safeFetch(feed.feedUrl, {
+    maxBytes: 15 * 1024 * 1024,
     headers: {
       'if-none-match': feed.etag || '',
       'if-modified-since': feed.lastModified || '',
@@ -1171,19 +1173,13 @@ async function fetchFeed(feed: SourceFeedRecord) {
       ? await fetchCustomAdapterFeed(feed, body)
       : await enrichLinkedFeedCandidates((await parser.parseString(body)).items as ParsedFeedItem[]);
 
-  await prisma.sourceFeed.update({
-    where: {
-      id: feed.id
-    },
-    data: {
-      etag: response.headers.get('etag'),
-      lastModified: response.headers.get('last-modified'),
-      lastCheckedAt: new Date(),
-      lastError: null
-    }
-  });
-
-  return items;
+  // The caller stores these only after every item is saved; storing them earlier meant a
+  // failed save got a 304 on the next poll and the unsaved items were never retried.
+  return {
+    items,
+    etag: response.headers.get('etag'),
+    lastModified: response.headers.get('last-modified')
+  };
 }
 
 function deriveFeedItem(sourceFeed: SourceFeedRecord, entry: ParsedFeedItem): IngestedItem | null {
@@ -1390,6 +1386,13 @@ async function enrichItemWithAi(input: {
   } satisfies EnrichmentResult;
 }
 
+// Tag types an admin can set from moderation; once an item is moderated these are never overwritten.
+const ADMIN_OWNED_TAG_TYPES = ['flag', 'audience'] as const;
+
+function isAdminOwnedTag(tag: { type: string }) {
+  return (ADMIN_OWNED_TAG_TYPES as readonly string[]).includes(tag.type);
+}
+
 async function persistContentItem(sourceFeed: SourceFeedRecord, input: IngestedItem) {
   const contentHash = computeContentHash({
     title: input.originalTitle,
@@ -1407,6 +1410,7 @@ async function persistContentItem(sourceFeed: SourceFeedRecord, input: IngestedI
       id: true,
       slug: true,
       aiContentHash: true,
+      moderatedAt: true,
       summaryAiGeneratedAt: true,
       classificationAiGeneratedAt: true,
       translations: {
@@ -1423,11 +1427,47 @@ async function persistContentItem(sourceFeed: SourceFeedRecord, input: IngestedI
     }
   });
 
-  const item = await prisma.contentItem.upsert({
-    where: {
-      dedupeKey: input.dedupeKey
-    },
-    create: {
+  if (existing) {
+    const hasExistingAiArtifacts = Boolean(
+      existing.summaryAiGeneratedAt && existing.classificationAiGeneratedAt && existing.translations.length > 0
+    );
+    // Same content as last time: leave the item alone so admin moderation, AI translations
+    // and the original publish date survive every poll.
+    if (existing.aiContentHash === contentHash) {
+      return { created: false, itemId: existing.id, contentHash, needsEnrichment: !hasExistingAiArtifacts };
+    }
+
+    const moderated = Boolean(existing.moderatedAt);
+    await prisma.contentItem.update({
+      where: {
+        id: existing.id
+      },
+      data: {
+        kind: input.kind,
+        originalTitle: input.originalTitle,
+        originalSummary: input.originalSummary,
+        aiContentHash: contentHash,
+        bodyMarkdown: input.bodyMarkdown,
+        coverImageUrl: input.coverImageUrl,
+        externalUrl: input.externalUrl,
+        youtubeVideoId: input.youtubeVideoId,
+        subject: input.subject,
+        ...(moderated ? {} : { audience: input.audience }),
+        translations: {
+          deleteMany: {},
+          create: toTranslationWriteRecords(input.translations)
+        },
+        tags: {
+          deleteMany: moderated ? { type: { notIn: [...ADMIN_OWNED_TAG_TYPES] } } : {},
+          create: moderated ? input.tags.filter((tag) => !isAdminOwnedTag(tag)) : input.tags
+        }
+      }
+    });
+    return { created: false, itemId: existing.id, contentHash, needsEnrichment: true };
+  }
+
+  const item = await prisma.contentItem.create({
+    data: {
       id: `item-${randomUUID()}`,
       slug: input.slug,
       dedupeKey: input.dedupeKey,
@@ -1450,44 +1490,16 @@ async function persistContentItem(sourceFeed: SourceFeedRecord, input: IngestedI
         create: input.tags
       }
     },
-    update: {
-      kind: input.kind,
-      publishedAt: input.publishedAt,
-      originalTitle: input.originalTitle,
-      originalSummary: input.originalSummary,
-      aiContentHash: contentHash,
-      bodyMarkdown: input.bodyMarkdown,
-      coverImageUrl: input.coverImageUrl,
-      externalUrl: input.externalUrl,
-      youtubeVideoId: input.youtubeVideoId,
-      subject: input.subject,
-      audience: input.audience,
-      translations: {
-        deleteMany: {},
-        create: toTranslationWriteRecords(input.translations)
-      },
-      tags: {
-        deleteMany: {},
-        create: input.tags
-      }
-    },
     select: {
       id: true
     }
   });
 
-  const hasExistingAiArtifacts = Boolean(
-    existing?.summaryAiGeneratedAt &&
-      existing?.classificationAiGeneratedAt &&
-      existing.translations.length > 0
-  );
-  const needsEnrichment = !existing || existing.aiContentHash !== contentHash || !hasExistingAiArtifacts;
-
   return {
-    created: !existing,
+    created: true,
     itemId: item.id,
     contentHash,
-    needsEnrichment
+    needsEnrichment: true
   };
 }
 
@@ -1582,14 +1594,14 @@ async function refreshItemMetadata(itemId: string, expectedContentHash?: string)
       classificationAiOutputTokens: enrichment.classificationAudit?.outputTokens || null,
       classificationAiTotalCostUsd: enrichment.classificationAudit?.totalCostUsd || null,
       classificationAiGeneratedAt: enrichment.classificationAudit?.createdAt || null,
-      audience: enrichment.audience,
+      ...(item.moderatedAt ? {} : { audience: enrichment.audience }),
       translations: {
         deleteMany: {},
         create: toTranslationWriteRecords(enrichment.translations)
       },
       tags: {
-        deleteMany: {},
-        create: enrichment.tags
+        deleteMany: item.moderatedAt ? { type: { notIn: [...ADMIN_OWNED_TAG_TYPES] } } : {},
+        create: item.moderatedAt ? enrichment.tags.filter((tag) => !isAdminOwnedTag(tag)) : enrichment.tags
       }
     }
   });
@@ -2128,7 +2140,6 @@ export async function processIngestionJob(
   }
 ) {
   const sourceFeed = await loadSourceFeed(payload);
-  const windowStart = sourceFeed?.lastCheckedAt || null;
   if (!sourceFeed) {
     throw new Error(`Source feed not found for ${payload.sourceId || payload.feedUrl}`);
   }
@@ -2186,8 +2197,8 @@ export async function processIngestionJob(
   }
 
   try {
-    const items = await fetchFeed(sourceFeed);
-    if (!items) {
+    const fetched = await fetchFeed(sourceFeed);
+    if (!fetched) {
       await prisma.source.update({
         where: {
           id: sourceFeed.source.id
@@ -2209,16 +2220,14 @@ export async function processIngestionJob(
     let createdItems = 0;
     let updatedItems = 0;
     let discoveredItems = 0;
-    let skippedOlderThanLastCheck = 0;
     const enqueuedEnrichmentIds: string[] = [];
 
-    for (const entry of items.slice(0, INGESTION_FEED_ITEM_LIMIT)) {
+    // Every entry in the feed is checked against what's stored (by dedupe key), rather than
+    // skipping entries older than the last poll. A date cutoff lost items for good whenever
+    // a feed was down, paused, or a save failed part-way; unchanged items are a cheap no-op.
+    for (const entry of fetched.items.slice(0, INGESTION_FEED_ITEM_LIMIT)) {
       const derived = deriveFeedItem(sourceFeed, entry);
       if (!derived) continue;
-      if (windowStart && derived.publishedAt <= windowStart) {
-        skippedOlderThanLastCheck += 1;
-        continue;
-      }
       discoveredItems += 1;
       const result = await persistContentItem(sourceFeed, derived);
       if (result.created) {
@@ -2249,14 +2258,27 @@ export async function processIngestionJob(
       }
     }
 
-    await prisma.source.update({
-      where: {
-        id: sourceFeed.source.id
-      },
-      data: {
-        status: 'active'
-      }
-    });
+    await Promise.all([
+      prisma.source.update({
+        where: {
+          id: sourceFeed.source.id
+        },
+        data: {
+          status: 'active'
+        }
+      }),
+      prisma.sourceFeed.update({
+        where: {
+          id: sourceFeed.id
+        },
+        data: {
+          etag: fetched.etag,
+          lastModified: fetched.lastModified,
+          lastCheckedAt: new Date(),
+          lastError: null
+        }
+      })
+    ]);
 
     return {
       ok: true,
@@ -2264,7 +2286,6 @@ export async function processIngestionJob(
       discoveredItems,
       createdItems,
       updatedItems,
-      skippedOlderThanLastCheck,
       enqueuedAiEnrichment: enqueuedEnrichmentIds.length,
       polledAt: new Date().toISOString()
     };

@@ -2620,7 +2620,9 @@ export class PrismaStore implements AppStore {
           audience: patch.audience,
           commentsLocked: patch.commentsLocked,
           hiddenByDefault: patch.hiddenByDefault,
-          pinned: patch.pinned
+          pinned: patch.pinned,
+          // Marks the audience and flags as admin-owned so ingestion and AI enrichment keep them.
+          ...(patch.audience || patch.flags ? { moderatedAt: new Date() } : {})
         }
       });
 

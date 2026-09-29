@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import { safeFetch } from '@edu-feed/shared/dist/safe-fetch.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -9,6 +10,9 @@ const mediaQuerySchema = z.object({
 
 const MEDIA_TTL_MS = 6 * 60 * 60 * 1000;
 const MEDIA_MAX_BYTES = 8 * 1024 * 1024;
+// Cap the in-memory cache so a flood of distinct image URLs cannot exhaust the API's memory.
+const MEDIA_CACHE_MAX_BYTES = 96 * 1024 * 1024;
+const MEDIA_CACHE_MAX_ENTRIES = 500;
 
 type CachedMedia = {
   body: Buffer;
@@ -19,8 +23,31 @@ type CachedMedia = {
 
 const mediaCache = new Map<string, CachedMedia>();
 const mediaInflight = new Map<string, Promise<CachedMedia>>();
+let mediaCacheBytes = 0;
 
-export async function registerMediaRoutes(app: FastifyInstance) {
+function cacheDelete(url: string) {
+  const existing = mediaCache.get(url);
+  if (!existing) return;
+  mediaCacheBytes -= existing.body.byteLength;
+  mediaCache.delete(url);
+}
+
+function cacheSet(url: string, asset: CachedMedia) {
+  cacheDelete(url);
+  mediaCache.set(url, asset);
+  mediaCacheBytes += asset.body.byteLength;
+  // Map iteration order is insertion order, so the first key is the least recently used.
+  while (mediaCacheBytes > MEDIA_CACHE_MAX_BYTES || mediaCache.size > MEDIA_CACHE_MAX_ENTRIES) {
+    const oldest = mediaCache.keys().next().value;
+    if (oldest === undefined) break;
+    cacheDelete(oldest);
+  }
+}
+
+export type MediaFetch = (url: string, init: { timeoutMs: number; maxBytes: number; headers: Record<string, string> }) => Promise<Response>;
+
+export async function registerMediaRoutes(app: FastifyInstance, options: { fetchImage?: MediaFetch } = {}) {
+  const fetchImage = options.fetchImage || safeFetch;
   app.get('/v1/media', async (request, reply) => {
     const parsed = mediaQuerySchema.parse(request.query || {});
     const target = new URL(parsed.url);
@@ -30,11 +57,13 @@ export async function registerMediaRoutes(app: FastifyInstance) {
     }
 
     try {
-      const asset = await loadRemoteImage(target.toString());
+      const asset = await loadRemoteImage(target.toString(), fetchImage);
       reply
         .header('content-type', asset.contentType)
         .header('cache-control', 'public, max-age=3600, stale-while-revalidate=86400')
         .header('etag', asset.etag)
+        .header('x-content-type-options', 'nosniff')
+        .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox")
         .send(asset.body);
       return reply;
     } catch (error) {
@@ -47,28 +76,31 @@ export async function registerMediaRoutes(app: FastifyInstance) {
   });
 }
 
-async function loadRemoteImage(url: string) {
+async function loadRemoteImage(url: string, fetchImage: MediaFetch) {
   const cached = mediaCache.get(url);
   if (cached && cached.expiresAt > Date.now()) {
+    cacheSet(url, cached);
     return cached;
   }
+  if (cached) cacheDelete(url);
 
   const inflight = mediaInflight.get(url);
   if (inflight) {
     return inflight;
   }
 
-  const request = fetchRemoteImage(url).finally(() => {
+  const request = fetchRemoteImage(url, fetchImage).finally(() => {
     mediaInflight.delete(url);
   });
   mediaInflight.set(url, request);
   return request;
 }
 
-async function fetchRemoteImage(url: string): Promise<CachedMedia> {
-  const response = await fetch(url, {
-    redirect: 'follow',
-    signal: AbortSignal.timeout(12_000),
+async function fetchRemoteImage(url: string, fetchImage: MediaFetch): Promise<CachedMedia> {
+  // safeFetch refuses internal addresses and stops reading once the size limit is passed.
+  const response = await fetchImage(url, {
+    timeoutMs: 12_000,
+    maxBytes: MEDIA_MAX_BYTES,
     headers: {
       'user-agent': 'FieldguideMediaRelay/0.1 (+http://localhost:4000)'
     }
@@ -84,16 +116,7 @@ async function fetchRemoteImage(url: string): Promise<CachedMedia> {
     throw new Error(`Unsupported media type: ${contentType || 'unknown'}.`);
   }
 
-  const declaredLength = Number(response.headers.get('content-length') || '0');
-  if (declaredLength > MEDIA_MAX_BYTES) {
-    throw new Error('Remote image exceeds the size limit.');
-  }
-
   const body = Buffer.from(await response.arrayBuffer());
-  if (body.byteLength > MEDIA_MAX_BYTES) {
-    throw new Error('Remote image exceeds the size limit.');
-  }
-
   const asset: CachedMedia = {
     body,
     contentType,
@@ -101,6 +124,6 @@ async function fetchRemoteImage(url: string): Promise<CachedMedia> {
     expiresAt: Date.now() + MEDIA_TTL_MS
   };
 
-  mediaCache.set(url, asset);
+  cacheSet(url, asset);
   return asset;
 }

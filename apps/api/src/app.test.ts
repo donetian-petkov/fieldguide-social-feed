@@ -560,10 +560,9 @@ test('admin generated story drafts require admin access and approval before publ
 });
 
 test('media relay proxies remote images through the API', async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input, init) => {
-    assert.equal(String(input), 'https://example.com/image.png');
-    assert.equal((init?.headers as Record<string, string>)['user-agent'], 'FieldguideMediaRelay/0.1 (+http://localhost:4000)');
+  const mediaFetch = async (input: string, init: { headers: Record<string, string> }) => {
+    assert.equal(input, 'https://example.com/image.png');
+    assert.equal(init.headers['user-agent'], 'FieldguideMediaRelay/0.1 (+http://localhost:4000)');
     return new Response(Buffer.from('image-bytes'), {
       status: 200,
       headers: {
@@ -573,7 +572,7 @@ test('media relay proxies remote images through the API', async () => {
   };
 
   const { store, queues } = createHarness();
-  const app = await buildApp({ config: testConfig, store, queues });
+  const app = await buildApp({ config: testConfig, store, queues, mediaFetch });
 
   try {
     const response = await app.inject({
@@ -584,9 +583,26 @@ test('media relay proxies remote images through the API', async () => {
     assert.equal(response.statusCode, 200);
     assert.equal(response.headers['content-type'], 'image/png');
     assert.match(String(response.headers['cache-control']), /max-age=3600/);
+    assert.equal(response.headers['x-content-type-options'], 'nosniff');
     assert.equal(response.body, 'image-bytes');
   } finally {
-    globalThis.fetch = originalFetch;
+    await app.close();
+  }
+});
+
+test('media relay refuses internal addresses', async () => {
+  const { store, queues } = createHarness();
+  const app = await buildApp({ config: testConfig, store, queues });
+
+  try {
+    for (const target of ['http://169.254.169.254/latest/meta-data/', 'http://localhost:4000/health', 'http://10.0.0.5/admin.png']) {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/v1/media?url=${encodeURIComponent(target)}`
+      });
+      assert.equal(response.statusCode, 502, target);
+    }
+  } finally {
     await app.close();
   }
 });
