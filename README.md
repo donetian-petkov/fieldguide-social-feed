@@ -1,65 +1,76 @@
 # Educational Social Feed
 
-Educational Social Feed is a full-stack educational social feed for history, art, books, movies, country knowledge, photography, nature, and educational video. It ships curated editorial feeds separately from moderated community posts, with EN/BG content modes, saved libraries, albums, flat comments, Ask-AI, newsletters, and an admin console for sources, moderation, users, AI budgets, and logs.
+Educational Social Feed is a full-stack educational social feed for history, art, books, movies, country knowledge, photography, nature, and educational video. Curated editorial feeds sit apart from moderated community posts, with EN/BG content modes, saved libraries, albums, flat comments, Ask-AI, newsletters, and an admin console for sources, moderation, users, AI budgets, and logs.
 
 ![History feed with pinned educational stories](docs/screenshots/feed-history.png)
 
-## Screenshots
+## See it in action
 
-| Feed | Item detail |
+| Ask-AI on an article | Browse and share |
 | --- | --- |
-| ![History feed](docs/screenshots/feed-history.png) | ![Item detail with Ask AI and albums](docs/screenshots/item-detail.png) |
+| ![Asking a question about an article](docs/screenshots/ask-ai.gif) | ![Scrolling the Art feed and copying a story link](docs/screenshots/browse-and-share.gif) |
 
-| Community | Admin moderation |
+| Admin console | Mobile |
 | --- | --- |
-| ![Community submission flow](docs/screenshots/community.png) | ![Admin moderation console](docs/screenshots/admin-moderation.png) |
+| ![Walking through the admin dashboard, sources, moderation, and users](docs/screenshots/admin-console.gif) | <img src="docs/screenshots/feed-mobile.png" alt="Art feed on a phone" width="260"> |
 
-## Stack
+| Item detail | Albums |
+| --- | --- |
+| ![Item detail with Ask AI and albums](docs/screenshots/item-detail.png) | ![Album with cover and ordered items](docs/screenshots/album.png) |
 
-- `apps/web`: Next.js App Router, React, MUI, Redux Toolkit + RTK Query, i18next.
-- `apps/api`: Fastify, secure cookie sessions, Prisma/MySQL persistence, Pino logs.
-- `apps/worker`: BullMQ worker for ingestion, AI enrichment, manual generated-story drafts, newsletter selection, and email jobs.
-- `packages/shared`: Zod schemas, DTOs, source registry, optional UI fixtures, and shared AI utilities.
+| Community | Settings |
+| --- | --- |
+| ![Community submission flow](docs/screenshots/community.png) | ![Settings with protected content modes](docs/screenshots/settings.png) |
 
-## Implemented Scope
+| Admin moderation | Admin sources |
+| --- | --- |
+| ![Admin moderation console](docs/screenshots/admin-moderation.png) | ![Admin source registry](docs/screenshots/admin-sources.png) |
 
-- Curated subject feeds, saved feed, community feed, item detail pages, share links, hidden items, and pinned rails.
-- Auth, password recovery, role-based admin access, profiles, settings, protected Kid/Adult mode switching, and per-user preferences.
-- Albums with create, rename, delete, cover selection, item removal, and manual ordering.
-- Flat comments with author edit windows, admin deletion, and per-item locking.
-- RSS, YouTube RSS, and adapter-backed ingestion with dedupe, metadata extraction, AI summary/translation/classification, and worker scheduling.
-- Ask-AI per item with content-mode enforcement and provider/model/budget controls.
-- Admin-only manual AI story generation that creates cited, verifier-scored drafts under a hard monthly cap; drafts require explicit admin approval before publishing.
-- Opt-in newsletters with weekly/daily cadence, viewed/saved/hidden preference ranking, AI-assisted item selection, and audit metadata.
-- Admin source CRUD/resync/delete, submission review, item pinning/removal/tagging, user role/suspend controls, AI settings, budget status, and error logs.
+## What's inside
 
-## Quick Start: Database Mode
+| Workspace | Tech | Role |
+| --- | --- | --- |
+| `apps/web` | Next.js App Router, React, MUI, Redux Toolkit + RTK Query, i18next | The site and admin console |
+| `apps/api` | Fastify, secure cookie sessions, Prisma/MySQL, Pino logs | REST API under `/v1` |
+| `apps/worker` | BullMQ on Redis | Ingestion, AI enrichment, generated-story drafts, newsletter selection, email |
+| `packages/shared` | Zod | Schemas, DTOs, source registry, optional UI fixtures, shared AI utilities |
 
-One-command bootstrap for a new machine:
+## Features
+
+- **Feeds:** curated subject feeds, saved feed, community feed, item pages, share links, hidden items, and pinned rails.
+- **Accounts:** auth, password recovery, role-based admin access, profiles, settings, per-user preferences, and password-protected Kid/Adult mode switching.
+- **Library:** albums with create, rename, delete, cover selection, item removal, and manual ordering.
+- **Comments:** flat threads with an author edit window, admin deletion, and per-item locking.
+- **Ingestion:** RSS, YouTube RSS, and adapter-backed sources with dedupe, metadata extraction, AI summary/translation/classification, and scheduled polling.
+- **AI:** per-item Ask-AI that respects the viewer's content mode, with provider/model/budget controls (OpenAI, Anthropic, OpenRouter, or a local Ollama). Admins can also generate cited, verifier-scored story drafts under a hard monthly cap; drafts never publish without explicit approval.
+- **Newsletters:** opt-in daily or weekly digests ranked by what each reader viewed, saved, and hid, with AI-assisted selection and audit metadata.
+- **Admin:** source create/edit/pause/resync/delete, submission review, item pinning/removal/tagging, user roles and suspension, AI settings, budget status, and error logs.
+
+Without real credentials, AI and email features are hidden or rejected rather than shown in a broken state. User-facing failures show as toasts; stack traces go to server logs and the admin log view. Article and video items link out to the original rather than republishing scraped bodies; community posts show their own full text.
+
+## Quick start
+
+Requires Node 22.14+ and npm 10.9+. Database mode (the default) also needs Docker for MySQL and Redis.
+
+### One command
 
 ```bash
 npm run setup:new-device
 ```
 
-This script:
-- creates `.env` from `.env.example` if needed
-- asks for setup mode, admin seed password, optional AI provider keys/models, and optional email settings
-- generates a local `COOKIE_SECRET`
-- generates `SEED_USER_PASSWORD` if you leave the prompt blank
-- installs npm dependencies
-- starts MySQL and Redis
-- runs Prisma generate, migrate, and seed
+This creates `.env` from `.env.example`, asks for the setup mode, admin seed password, optional AI keys/models, and optional email settings, generates `COOKIE_SECRET` (and `SEED_USER_PASSWORD` if you leave it blank), installs dependencies, starts MySQL and Redis, and runs Prisma generate, migrate, and seed.
 
-Useful variants:
+Handy flags:
 
 ```bash
-npm run setup:new-device:demo
-npm run setup:new-device -- --playwright
-npm run setup:new-device -- --seed-password your-local-admin-password
-npm run setup:new-device -- --build --start
+npm run setup:new-device:demo                                # fixture mode, skips Docker/Prisma/seed
+npm run setup:new-device -- --playwright                     # also install Playwright browsers
+npm run setup:new-device -- --seed-password your-password    # set the admin seed password up front
+npm run setup:new-device -- --build --start                  # build, then start the stack
+npm run setup:new-device -- --non-interactive                # use defaults and flags, no prompts
 ```
 
-Database mode is the default run path. It starts MySQL and Redis, boots the approved source registry, and the worker queues immediate ingestion for active RSS, YouTube RSS, and approved adapter-backed sources.
+### By hand
 
 ```bash
 cp .env.example .env
@@ -71,84 +82,77 @@ npm run seed
 npm run dev
 ```
 
-Open:
+Then open the web app at [http://localhost:3000](http://localhost:3000) and API health at [http://localhost:4000/health](http://localhost:4000/health).
 
-- Web: [http://localhost:3000](http://localhost:3000)
-- API health: [http://localhost:4000/health](http://localhost:4000/health)
+Use `localhost` for both the web app and the API. Cookies are tied to the host name, so mixing `127.0.0.1:3000` with `localhost:4000` makes you look signed out even after a successful login.
 
-Use `localhost` consistently for the web and API while testing auth. Browser cookies are host-scoped, so mixing `127.0.0.1:3000` with `localhost:4000` can make the app appear signed out even after a successful login.
+## Running the stack
 
-`npm run dev` and `npm run start` now supervise the full stack. In database mode they bring up `docker compose` automatically, start API/worker/web together, and run `docker compose down` when you stop with `Ctrl+C`, `SIGTERM`, `SIGHUP`, or by closing the terminal. In `DEMO_MODE=true`, the same runner skips Docker entirely.
+`npm run dev` and `npm run start` supervise everything. In database mode they run `docker compose up`, start the API, worker, and web app together, and run `docker compose down` when you stop with `Ctrl+C`, `SIGTERM`, `SIGHUP`, or by closing the terminal. With `DEMO_MODE=true` they skip Docker entirely.
 
-The supervisor can also auto-shutdown the stack after user inactivity. Set `AUTO_SHUTDOWN_ENABLED=true` and adjust `AUTO_SHUTDOWN_IDLE_HOURS` in `.env`. Activity is driven by real browser interaction beacons, not background polling.
+To start one service on its own: `npm run dev:web`, `npm run dev:api`, or `npm run dev:worker`.
 
-For repo-managed runtime settings, `/Users/donetianpetkov/feed/.env` is the source of truth. Inherited shell variables like `OPENAI_API_KEY` are cleared for this project unless they are explicitly present in the repo `.env`.
+The supervisor can also shut the stack down after a period with no real browser interaction (background polling doesn't count). Set `AUTO_SHUTDOWN_ENABLED=true` and adjust `AUTO_SHUTDOWN_IDLE_HOURS` in `.env`.
 
-The default database seed creates local accounts, the source registry, and AI config only. Set `SEED_USER_PASSWORD` in `.env` before running `npm run seed`; the admin username is `admin`. The source registry is also bootstrapped automatically by the API and worker at startup. It does not insert bundled fixture articles.
+On startup the API and worker load the approved source registry, and the worker immediately queues ingestion for every active RSS, YouTube RSS, and adapter-backed source.
 
-To intentionally load bundled UI fixtures into MySQL for development screenshots, run `SEED_DEMO_CONTENT=true npm run seed`. To allow the web app to show bundled fixture data when the API is empty or unavailable, set `NEXT_PUBLIC_DEMO_FALLBACK=true`; this is off by default.
+## Configuration
 
-Prisma workspace scripts load the repo-root `.env`, so you do not need to duplicate `DATABASE_URL` inside `apps/api/.env`. The Docker MySQL init script creates both `fieldguide` and `fieldguide_shadow`; Prisma uses the shadow database during `migrate dev`.
+The repo-root `.env` is the single source of truth. Shell variables such as `OPENAI_API_KEY` that you've exported elsewhere are ignored for this project unless they're also in `.env`. Prisma scripts read the same root file, so there's no need for an `apps/api/.env`.
 
-If you already had a Docker volume from before the shadow database was added, create/grant it once:
+| Setting | What it does |
+| --- | --- |
+| `SEED_USER_PASSWORD` | Password for the seeded accounts. Set it before `npm run seed`. The admin username is `admin`. |
+| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `OLLAMA_BASE_URL` | AI providers. Pick the default with `DEFAULT_AI_PROVIDER`; models via `SUMMARY_MODEL`, `TRANSLATION_MODEL`, `ASK_MODEL`, `NEWSLETTER_MODEL`. |
+| `RESEND_API_KEY`, `EMAIL_FROM`, `ENABLE_EMAIL` | Outgoing email. Off by default. |
+| `DEMO_MODE` | `true` runs the API from bundled fixtures with no MySQL or Redis. |
+| `NEXT_PUBLIC_DEMO_FALLBACK` | `true` lets the web app show bundled fixtures when the API is empty or unreachable. Off by default. |
+| `AUTO_SHUTDOWN_ENABLED`, `AUTO_SHUTDOWN_IDLE_HOURS` | Idle shutdown for the supervised stack. |
+
+The default seed creates local accounts, the source registry, and AI config only; it does not insert sample articles. To load the bundled fixture articles into MySQL (useful for screenshots), run `SEED_DEMO_CONTENT=true npm run seed`.
+
+The Docker MySQL init script creates both `fieldguide` and `fieldguide_shadow`; Prisma uses the shadow database during `migrate dev`. If your Docker volume predates the shadow database, create it once:
 
 ```bash
 docker exec -i fieldguide-mysql mysql -uroot -proot -e "CREATE DATABASE IF NOT EXISTS fieldguide_shadow; GRANT ALL PRIVILEGES ON fieldguide_shadow.* TO 'fieldguide'@'%'; FLUSH PRIVILEGES;"
 ```
 
-## Fixture Mode
+### Fixture mode
 
-Fixture mode is available for isolated UI work without MySQL or Redis. Set `DEMO_MODE=true` and `NEXT_PUBLIC_DEMO_FALLBACK=true` in `.env`, then run:
+For UI work without MySQL or Redis, set `DEMO_MODE=true` and `NEXT_PUBLIC_DEMO_FALLBACK=true` in `.env`, then run `npm install && npm run dev`. The fixture accounts are `alex`, `mila`, and `admin`, all with the password `fieldguide123`.
 
-```bash
-npm install
-npm run dev
-```
-
-Useful service commands:
+## Testing
 
 ```bash
-npm run dev:web
-npm run dev:api
-npm run dev:worker
-npm run start
-```
-
-## Verification
-
-```bash
-npm test
+npm test          # unit tests: shared schemas/sources, API routes, worker newsletter ranking and job ids, web themes
 npm run build
-npm run test:e2e
+npm run test:e2e  # builds, then runs Playwright against the API in fixture mode
 ```
 
-When the API and web app are already running, use the web workspace command directly:
+The Playwright suite covers auth, password reset, feeds, Ask-AI, settings, albums, saved and hidden items, sharing, admin AI, user management, source CRUD, pinning, moderation, community approval, and comment locking. It starts its own API (in fixture mode) and web server, regardless of what `.env` says.
+
+If ports 3000/4000 are taken, run it elsewhere. The web app bakes in the API address at build time, so rebuild it first:
 
 ```bash
-npm run test:e2e -w @edu-feed/web
+NEXT_PUBLIC_API_URL=http://localhost:4100 npm run build -w @edu-feed/web
+E2E_WEB_PORT=3100 E2E_API_PORT=4100 npm run test:e2e -w @edu-feed/web
 ```
 
-Current automated coverage includes shared schema/source tests, API route tests for admin-only generated-story draft approval, worker newsletter-ranking tests, web theme tests, and Playwright flows for auth, password reset, feeds, Ask-AI, settings, albums, saved/hidden state, sharing, admin AI, user management, source CRUD, pinning, moderation, community approval, and comment locking.
+If the API and web app are already running, `PW_USE_EXISTING_SERVERS=true npm run test:e2e -w @edu-feed/web` reuses them.
 
-## Screenshots
+## Screenshots and GIFs
 
-Screenshots are reproducible from the built fixture app:
+Everything in `docs/screenshots` is reproducible from the built fixture app:
 
 ```bash
 npm run build
 npm run screenshots
 ```
 
-The capture script starts the built API and web app in fixture mode, logs in as seeded local users, and writes PNGs to `docs/screenshots`.
+The script starts the built API and web app in fixture mode, signs in as the fixture users, and writes PNGs plus GIF walkthroughs to `docs/screenshots`. GIFs need `ffmpeg` on your `PATH` (skip them with `SKIP_GIFS=true`). To use other ports, set `SCREENSHOT_WEB_URL` and `SCREENSHOT_API_URL` and build the web app with the matching `NEXT_PUBLIC_API_URL`.
 
-## Main Routes
+## Routes
 
-- App: `/`, `/feed/[subject]`, `/item/[slug]`, `/saved`, `/albums/[id]`, `/community`, `/profile/[username]`, `/settings`.
-- Admin: `/admin`, `/admin/sources`, `/admin/moderation`, `/admin/users`, `/admin/ai`, `/admin/usage`, `/admin/logs`.
-- API: `/v1/auth/*`, `/v1/me`, `/v1/feed`, `/v1/items/:id`, `/v1/albums`, `/v1/submissions`, `/v1/admin/*`, `/v1/admin/generated-stories`.
-
-## Notes
-
-- User-facing failures are toast/alert-level only; stack traces and integration failures are logged server-side and surfaced in admin logs.
-- External article/video pages link out to originals and do not republish full scraped bodies; community posts render their own full body.
-- Email and AI providers are configuration-driven. Without real credentials, provider-backed AI controls are hidden or rejected instead of exposing unavailable actions.
+- **App:** `/`, `/feed/[subject]`, `/item/[slug]`, `/saved`, `/albums/[id]`, `/community`, `/profile/[username]`, `/settings`
+- **Admin:** `/admin`, `/admin/sources`, `/admin/moderation`, `/admin/users`, `/admin/ai`, `/admin/usage`, `/admin/logs`
+- **API:** `/v1/auth/*`, `/v1/me`, `/v1/feed`, `/v1/items/:id`, `/v1/albums`, `/v1/submissions`, `/v1/admin/*`, `/v1/admin/generated-stories`

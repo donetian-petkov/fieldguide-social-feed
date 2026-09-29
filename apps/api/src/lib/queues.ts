@@ -113,7 +113,7 @@ export class BullMqAppQueues implements AppQueues {
         draftId
       },
       {
-        jobId: `generated-story:${draftId}`,
+        jobId: `generated-story-${draftId}`, // BullMQ rejects custom ids with a single colon
         removeOnComplete: true,
         removeOnFail: 50
       }

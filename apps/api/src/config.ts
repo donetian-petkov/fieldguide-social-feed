@@ -49,7 +49,12 @@ function parseEnvFile(filePath: string) {
   return entries;
 }
 
+// Harnesses (Playwright, screenshot capture) set FIELDGUIDE_ENV_OVERRIDE=true so the
+// values they pass explicitly win over the repo .env instead of being wiped.
+const keepExplicitEnv = process.env.FIELDGUIDE_ENV_OVERRIDE === 'true';
+const explicitEnv: Record<string, string> = {};
 for (const key of repoManagedEnvKeys) {
+  if (keepExplicitEnv && process.env[key] !== undefined) explicitEnv[key] = process.env[key] as string;
   delete process.env[key];
 }
 
@@ -57,6 +62,7 @@ Object.assign(process.env, parseEnvFile(repoRootEnvPath));
 if (cwdEnvPath !== repoRootEnvPath) {
   Object.assign(process.env, parseEnvFile(cwdEnvPath));
 }
+Object.assign(process.env, explicitEnv);
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),

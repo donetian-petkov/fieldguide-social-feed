@@ -1,5 +1,8 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
+const webUrl = `http://localhost:${process.env.E2E_WEB_PORT || '3000'}`;
+const apiUrl = `http://localhost:${process.env.E2E_API_PORT || '4000'}`;
+
 async function loginAs(page: Page, username: 'alex' | 'admin' | 'mila' = 'alex') {
   await page.goto('/auth');
   await page.getByLabel('Username').fill(username);
@@ -164,8 +167,8 @@ test('settings persist newsletter preferences and Ask-AI disablement', async ({ 
     await expect(askAiSection.getByText('Enable Ask-AI in settings to ask questions.')).toBeVisible();
   } finally {
     try {
-      const cleanup = await page.evaluate(async () => {
-        const response = await fetch('http://localhost:4000/v1/me/settings', {
+      const cleanup = await page.evaluate(async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/v1/me/settings`, {
           method: 'PATCH',
           credentials: 'include',
           headers: {
@@ -179,7 +182,7 @@ test('settings persist newsletter preferences and Ask-AI disablement', async ({ 
         });
 
         return response.status;
-      });
+      }, apiUrl);
       expect(cleanup).toBe(200);
     } catch {
       // Best-effort cleanup so repeated runs preserve Alex's seeded settings.
@@ -299,12 +302,12 @@ test('saving an item makes it appear in the saved feed', async ({ page }) => {
     await expect(page.locator(`a[href="/item/${slug}"]`).first()).toBeVisible();
   } finally {
     if (saved) {
-      await page.evaluate(async (currentItemId) => {
-        await fetch(`http://localhost:4000/v1/items/${currentItemId}/save`, {
+      await page.evaluate(async ([baseUrl, currentItemId]) => {
+        await fetch(`${baseUrl}/v1/items/${currentItemId}/save`, {
           method: 'DELETE',
           credentials: 'include'
         });
-      }, itemId).catch(() => undefined);
+      }, [apiUrl, itemId] as const).catch(() => undefined);
     }
   }
 });
@@ -337,15 +340,15 @@ test('admin login reaches the live admin dashboard without the unavailable warni
 
   await expect(page.getByRole('heading', { name: 'Admin' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Sources' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Submissions' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Errors' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Moderation' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Logs' })).toBeVisible();
   await expect(page.getByText('Admin data is available only after signing in as an admin and connecting to the API.')).toHaveCount(0);
 });
 
 test('sharing a feed item copies its detail URL', async ({ browser }) => {
   const context = await browser.newContext();
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
-    origin: 'http://localhost:3000'
+    origin: webUrl
   });
   const page = await context.newPage();
   const itemSlug = 'how-vermeer-builds-silence-through-light';
@@ -361,10 +364,11 @@ test('sharing a feed item copies its detail URL', async ({ browser }) => {
         response.status() === 200
     );
     await feedCardBySlug(page, itemSlug).getByRole('button', { name: 'Share' }).click();
+    await page.getByRole('menuitem', { name: /Copy story link/ }).click();
     const shareResponse = await shareResponsePromise;
     const result = await shareResponse.json();
 
-    await expect(page.getByText('Share link copied.')).toBeVisible();
+    await expect(page.getByText('Story link copied.')).toBeVisible();
     expect(result.shareUrl).toContain(`/item/${itemSlug}`);
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`/item/${itemSlug}`);
   } finally {
@@ -477,8 +481,8 @@ test('admin pinning updates the public pinned rail for the matching feed', async
   let pinned = false;
 
   async function clearPinnedState() {
-    const result = await adminPage.evaluate(async (currentItemId) => {
-      const response = await fetch(`http://localhost:4000/v1/admin/items/${currentItemId}`, {
+    const result = await adminPage.evaluate(async ([baseUrl, currentItemId]) => {
+      const response = await fetch(`${baseUrl}/v1/admin/items/${currentItemId}`, {
         method: 'PATCH',
         credentials: 'include',
         headers: {
@@ -491,7 +495,7 @@ test('admin pinning updates the public pinned rail for the matching feed', async
         status: response.status,
         body: await response.text()
       };
-    }, itemId);
+    }, [apiUrl, itemId] as const);
 
     expect(result.status).toBe(200);
   }
