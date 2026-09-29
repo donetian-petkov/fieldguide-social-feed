@@ -51,7 +51,7 @@ export function AuthPanel() {
         setMessage(
           result.previewToken
             ? `Reset token generated: ${result.previewToken}`
-            : 'If the account exists, a reset email was queued.'
+            : 'If the account exists, a reset token has been issued. In local development it is printed in the API console.'
         );
         return;
       }

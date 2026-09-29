@@ -727,6 +727,14 @@ export class PrismaStore implements AppStore {
       }).catch(() => undefined);
       return null;
     }
+    if (session.user.suspendedAt) {
+      await this.prisma.session.deleteMany({
+        where: {
+          userId: session.userId
+        }
+      }).catch(() => undefined);
+      return null;
+    }
     return buildUserDto(session.user);
   }
 
@@ -916,6 +924,11 @@ export class PrismaStore implements AppStore {
         },
         data: {
           usedAt: new Date()
+        }
+      }),
+      this.prisma.session.deleteMany({
+        where: {
+          userId: record.userId
         }
       })
     ]);
@@ -2735,6 +2748,7 @@ export class PrismaStore implements AppStore {
           suspendedAt: suspended ? new Date() : null
         }
       }),
+      ...(suspended ? [this.prisma.session.deleteMany({ where: { userId: user.id } })] : []),
       this.prisma.userSettings.updateMany({
         where: {
           userId: user.id

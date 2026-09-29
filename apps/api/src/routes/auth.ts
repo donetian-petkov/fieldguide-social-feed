@@ -69,7 +69,14 @@ export async function registerAuthRoutes(app: FastifyInstance, options: { store:
 
   app.post('/v1/auth/forgot-password', async (request) => {
     const parsed = forgotPasswordBodySchema.parse(request.body || {});
-    return options.store.forgotPassword(parsed.identifier);
+    const result = await options.store.forgotPassword(parsed.identifier);
+    // Handing the token back to whoever asked would let anyone reset any account.
+    // Only fixture mode shows it; locally it goes to the API console instead of an email.
+    if (options.config.DEMO_MODE) return result;
+    if (result.previewToken && options.config.NODE_ENV === 'development') {
+      request.log.warn({ identifier: parsed.identifier }, `Password reset token (enter it on the reset form): ${result.previewToken}`);
+    }
+    return { ok: true, previewToken: null };
   });
 
   app.post('/v1/auth/reset-password', async (request) => {
