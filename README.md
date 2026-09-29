@@ -2,7 +2,9 @@
 
 Educational Social Feed is a full-stack educational social feed for history, art, books, movies, country knowledge, photography, nature, and educational video. Curated editorial feeds sit apart from moderated community posts, with EN/BG content modes, saved libraries, albums, flat comments, Ask-AI, newsletters, and an admin console for sources, moderation, users, AI budgets, and logs.
 
-![History feed with pinned educational stories](docs/screenshots/feed-history.png)
+![Full walkthrough: feeds, an article with Ask-AI, saved items, albums, community, settings, then every admin page](docs/screenshots/full-tour.gif)
+
+A sharper version of this walkthrough is in [full-tour.mp4](docs/screenshots/full-tour.mp4) (44 seconds, 1280px).
 
 ## See it in action
 
@@ -14,17 +16,21 @@ Educational Social Feed is a full-stack educational social feed for history, art
 | --- | --- |
 | ![Walking through the admin dashboard, sources, moderation, and users](docs/screenshots/admin-console.gif) | <img src="docs/screenshots/feed-mobile.png" alt="Art feed on a phone" width="260"> |
 
-| Item detail | Albums |
+| History feed | Item detail |
 | --- | --- |
-| ![Item detail with Ask AI and albums](docs/screenshots/item-detail.png) | ![Album with cover and ordered items](docs/screenshots/album.png) |
+| ![History feed with pinned educational stories](docs/screenshots/feed-history.png) | ![Item detail with Ask AI and albums](docs/screenshots/item-detail.png) |
 
-| Community | Settings |
+| Albums | Community |
 | --- | --- |
-| ![Community submission flow](docs/screenshots/community.png) | ![Settings with protected content modes](docs/screenshots/settings.png) |
+| ![Album with cover and ordered items](docs/screenshots/album.png) | ![Community submission flow](docs/screenshots/community.png) |
 
-| Admin moderation | Admin sources |
+| Settings | Admin moderation |
 | --- | --- |
-| ![Admin moderation console](docs/screenshots/admin-moderation.png) | ![Admin source registry](docs/screenshots/admin-sources.png) |
+| ![Settings with protected content modes](docs/screenshots/settings.png) | ![Admin moderation console](docs/screenshots/admin-moderation.png) |
+
+| Admin sources | |
+| --- | --- |
+| ![Admin source registry](docs/screenshots/admin-sources.png) | |
 
 ## What's inside
 
@@ -149,7 +155,7 @@ npm run build
 npm run screenshots
 ```
 
-The script starts the built API and web app in fixture mode, signs in as the fixture users, and writes PNGs plus GIF walkthroughs to `docs/screenshots`. GIFs need `ffmpeg` on your `PATH` (skip them with `SKIP_GIFS=true`). To use other ports, set `SCREENSHOT_WEB_URL` and `SCREENSHOT_API_URL` and build the web app with the matching `NEXT_PUBLIC_API_URL`.
+The script starts the built API and web app in fixture mode, signs in as the fixture users, and writes PNGs, short GIF clips, and the full walkthrough (`full-tour.mp4` and `full-tour.gif`) to `docs/screenshots`. GIFs need `ffmpeg` on your `PATH` (skip them with `SKIP_GIFS=true`). To use other ports, set `SCREENSHOT_WEB_URL` and `SCREENSHOT_API_URL` and build the web app with the matching `NEXT_PUBLIC_API_URL`.
 
 ## Routes
 

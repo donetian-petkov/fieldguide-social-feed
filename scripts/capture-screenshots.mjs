@@ -140,6 +140,93 @@ async function recordGif(browser, fileName, username, flow) {
   console.log(`Captured ${fileName}`);
 }
 
+function convertToMp4(videoPath, mp4Path) {
+  const result = spawnSync(
+    'ffmpeg',
+    ['-y', '-loglevel', 'error', '-i', videoPath, '-vf', 'scale=1280:-2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '28', '-preset', 'slow', '-movflags', '+faststart', mp4Path],
+    { stdio: 'inherit' }
+  );
+  if (result.status !== 0) throw new Error(`ffmpeg failed for ${mp4Path}`);
+}
+
+async function visit(page, route, ready, dwell = 1600) {
+  await page.goto(`${webUrl}${route}`, { waitUntil: 'networkidle' });
+  await page.getByText(ready, { exact: false }).first().waitFor();
+  await pause(dwell);
+}
+
+async function scrollTour(page, distance = 700) {
+  for (let step = 0; step < 3; step += 1) {
+    await page.mouse.wheel(0, distance / 3);
+    await pause(450);
+  }
+  await pause(500);
+  await page.mouse.wheel(0, -distance);
+  await pause(500);
+}
+
+// One continuous walkthrough of the reader and admin sides, saved as an MP4 plus a lighter GIF.
+async function captureFullTour(browser) {
+  const context = await browser.newContext({
+    viewport,
+    baseURL: webUrl,
+    recordVideo: { dir: videoDir, size: viewport }
+  });
+  const page = await context.newPage();
+
+  await login(page, 'alex');
+  await pause(1200);
+  await scrollTour(page, 900);
+  for (const [route, ready] of [
+    ['/feed/art', 'Art'],
+    ['/feed/books', 'Books'],
+    ['/feed/videos', 'Videos']
+  ]) {
+    await visit(page, route, ready, 1200);
+  }
+
+  await visit(page, '/item/the-bell-rhythms-of-kukeri-season', 'Ask AI', 1000);
+  const askAi = page.getByRole('heading', { name: 'Ask AI' }).locator('..').locator('..');
+  await askAi.scrollIntoViewIfNeeded();
+  await askAi.locator('[data-ask-ai-input]').pressSequentially('Where did this tradition start?', { delay: 40 });
+  await askAi.getByRole('button', { name: 'Ask' }).click();
+  await askAi.getByText(/Your question was/).waitFor();
+  await page.mouse.wheel(0, 250);
+  await pause(2000);
+
+  await visit(page, '/saved', 'Saved', 1400);
+  await visit(page, '/albums/album-1', 'Quiet History', 1800);
+  await visit(page, '/community', 'Submit to community', 1400);
+  await scrollTour(page, 600);
+  await visit(page, '/settings', 'Protected content modes', 1400);
+  await scrollTour(page, 800);
+
+  await context.clearCookies();
+  await login(page, 'admin');
+  for (const [route, ready] of [
+    ['/admin', 'Sources'],
+    ['/admin/sources', 'Sources'],
+    ['/admin/moderation', 'Recent Items'],
+    ['/admin/users', 'Users'],
+    ['/admin/ai', 'AI'],
+    ['/admin/usage', 'Usage'],
+    ['/admin/logs', 'Logs']
+  ]) {
+    await visit(page, route, ready, 1500);
+  }
+
+  const video = page.video();
+  await context.close();
+  const raw = await video.path();
+  convertToMp4(raw, path.join(outputDir, 'full-tour.mp4'));
+  const filters = 'fps=8,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=5';
+  const gif = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', raw, '-vf', filters, '-loop', '0', path.join(outputDir, 'full-tour.gif')], {
+    stdio: 'inherit'
+  });
+  if (gif.status !== 0) throw new Error('ffmpeg failed for full-tour.gif');
+  console.log('Captured full-tour.mp4 and full-tour.gif');
+}
+
 async function captureScreenshots(browser) {
   const context = await browser.newContext({ viewport, baseURL: webUrl, deviceScaleFactor: 1 });
   const page = await context.newPage();
@@ -176,6 +263,8 @@ async function captureGifs(browser) {
     return;
   }
   await rm(videoDir, { recursive: true, force: true });
+
+  await captureFullTour(browser);
 
   await recordGif(browser, 'ask-ai.gif', 'alex', async (page) => {
     await page.goto(`${webUrl}/item/the-bell-rhythms-of-kukeri-season`, { waitUntil: 'networkidle' });
